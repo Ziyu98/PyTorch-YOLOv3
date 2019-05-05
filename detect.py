@@ -27,7 +27,7 @@ if __name__ == "__main__":
     parser.add_argument("--model_def", type=str, default="config/yolov3.cfg", help="path to model definition file")
     parser.add_argument("--weights_path", type=str, default="weights/yolov3.weights", help="path to weights file")
     parser.add_argument("--class_path", type=str, default="data/coco.names", help="path to class label file")
-    parser.add_argument("--conf_thres", type=float, default=0.8, help="object confidence threshold")
+    parser.add_argument("--conf_thres", type=float, default=0.1, help="object confidence threshold")
     parser.add_argument("--nms_thres", type=float, default=0.4, help="iou thresshold for non-maximum suppression")
     parser.add_argument("--batch_size", type=int, default=1, help="size of the batches")
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
@@ -67,15 +67,43 @@ if __name__ == "__main__":
     img_detections = []  # Stores detections for each image index
 
     print("\nPerforming object detection:")
+    layer_index = np.zeros(38)
+    for j in range(30):
+        layer_index[j] = j+1
+    layer_index[30] = 32
+    layer_index[31] = 34
+    layer_index[32] = 37
+    layer_index[33] = 39
+    layer_index[34] = 41
+    layer_index[35] = 44
+    layer_index[36] = 46
+    layer_index[37] = 48
+
+    layers_idx = [0, 1, 4, 5, 8, 11, 12, 15, 18, 21, 24, 27, 30, 33, 36, 37, 40, 
+                  43, 46, 49, 52, 55, 58, 61, 62, 65, 68, 71, 74, 75, 77, 79, 87, 89, 91, 99, 101, 103]
     prev_time = time.time()
     for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
         # Configure input
         input_imgs = Variable(input_imgs.type(Tensor))
-
+        path = 'res_for_frame{}'.format(batch_i + 1)
+        try:
+            os.mkdir(path)
+        except OSError as error:
+            print(error)
         # Get detections
         with torch.no_grad():
-            detections = model(input_imgs)
-            detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
+            detections, layers = model(input_imgs)
+            print("collecting layer data....")
+            for j in range(len(layer_index)):
+                locals()['file_n' + str(int(layer_index[j]))] = open('res_for_frame{}/layer{}.txt'.format(batch_i + 1,int(layer_index[j])),'w')
+                temp = layers[layers_idx[j]]
+                temp = temp[0]
+                for data in temp:
+                    np.savetxt(locals()['file_n' + str(int(layer_index[j]))], data, fmt = '%.3f')
+                locals()['file_n' + str(int(layer_index[j]))].close()
+                
+
+            #detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
 
         # Log progress
         current_time = time.time()
@@ -83,17 +111,27 @@ if __name__ == "__main__":
         prev_time = current_time
         print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
 
+        #if detections is not None:
+            # Rescale boxes to original image
+            #detections = rescale_boxes(detections, opt.img_size, img_shape)
+            #unique_labels = detections[:, -1].cpu().unique()
+            #n_cls_preds = len(unique_labels)
+            #bbox_colors = random.sample(colors, n_cls_preds)
+            #for x1, y1, x2, y2, conf, cls_conf, cls_pred in detections:
+
+                #print("\t+ Label: %s, Conf: %.5f" % (classes[int(cls_pred)], cls_conf.item()))
+
         # Save image and detections
-        imgs.extend(img_paths)
-        img_detections.extend(detections)
+        #imgs.extend(img_paths)
+        #img_detections.extend(detections)
 
     # Bounding-box colors
-    cmap = plt.get_cmap("tab20b")
-    colors = [cmap(i) for i in np.linspace(0, 1, 20)]
+    #cmap = plt.get_cmap("tab20b")
+    #colors = [cmap(i) for i in np.linspace(0, 1, 20)]
 
-    print("\nSaving images:")
+    #print("\nSaving images:")
     # Iterate through images and save plot of detections
-    for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
+    """for img_i, (path, detections) in enumerate(zip(imgs, img_detections)):
 
         print("(%d) Image: '%s'" % (img_i, path))
 
@@ -138,4 +176,4 @@ if __name__ == "__main__":
         plt.gca().yaxis.set_major_locator(NullLocator())
         filename = path.split("/")[-1].split(".")[0]
         plt.savefig(f"output/{filename}.png", bbox_inches="tight", pad_inches=0.0)
-        plt.close()
+        plt.close()"""
