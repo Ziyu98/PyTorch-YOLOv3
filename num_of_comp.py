@@ -9,6 +9,7 @@ def parse_config(path):
     lines = [x.rstrip().lstrip() for x in lines]
     channels = []
     layersize = []
+    roi_idx = []
     for line in lines:
         if not line.startswith('['):
             key, value = line.split("=")
@@ -17,7 +18,9 @@ def parse_config(path):
                 channels.append(value)
             elif key.rstrip() == "size":
                 layersize.append(value)
-    return channels, layersize
+            elif key.rstrip() == "RoI_idx":
+                roi_idx.append(value)
+    return channels, layersize, roi_idx
         
 def shrink(bboxes, offset):
     shrinked_bboxes = []
@@ -32,25 +35,32 @@ def shrink(bboxes, offset):
             shrinked_bboxes.append(shrinked_bbox)
     return shrinked_bboxes
 
-def get_RoIs(frame_id):
-    distance = 4
-    start_point = 3
-    with open("/i3c/hpcl/zjy5087/PyTorch-YOLOv3/store_{}_{}/res_for_frame{}/RoI.txt".format(distance, start_point, frame_id)) as f:
+def get_RoIs(path):
+    with open(path) as f:
+        RoIs = []
+        total_RoIs = []
         _list = []
-        _lists = []
         for line in f:
-            if not line.startswith("*"):
+            if line.startswith("R"):
+                if len(_list) != 0:
+                    RoIs.append(_list)
+                    _list = []
+                if len(RoIs) != 0:
+                    total_RoIs.append(RoIs)
+                    RoIs = []
+            elif not line.startswith("*"):
                 if line.startswith("["):
                     _line = line[1 : -2]
                     _line = _line.split(",")
                     temp = [int(float(_line[i])) for i in range(len(_line))]
                     _list.append(temp)
+                elif line[0:4] == "None":
+                    _list.append(None)
             else:
                 if len(_list) != 0:
-                    _lists.append(_list)
+                    RoIs.append(_list)
                     _list = []
-        _lists.append(_list)
-    return _lists
+    return total_RoIs
 
 def cal_area(RoI):
     _area = 0
@@ -71,35 +81,39 @@ def cal_area(RoI):
 
 
 
-path = "config_for_comp.cfg"
-channels, layersize = parse_config(path)
+path_cfg = "../PyTorch-YOLOv3_partial_inf/config_for_comp.cfg"
+channels, layersize, roi_idx = parse_config(path_cfg)
 cnt = len(channels)
+path_RoI = "/i3c/hpcl/zjy5087/PyTorch-YOLOv3/res_for_s4_e2/res_for_s4_e2_dist9_0/RoI"
 resfile = open("num_of_comp.txt", "w")
 b1 = 0
 b3 = 0
 p1 = 0
 p3 = 0
 count = 0
-for batch_i in range(3, 499):
-    if (batch_i - 2) % 4 != 0:
-        baseline_3 = 0
-        baseline_1 = 0
-        partial_3 = 0
-        partial_1 = 0
-        j = 0
-        RoIs = get_RoIs(batch_i + 1)
-        for i in range(cnt):
-            if channels[i] > 0:
-                # 3*3
-                RoI = RoIs[j]
-                j += 1
+total_RoIs = get_RoIs(path_RoI)
+for RoIs in total_RoIs:
+    baseline_3 = 0
+    baseline_1 = 0
+    partial_3 = 0
+    partial_1 = 0
+    for i in range(cnt):
+        if channels[i] > 0:
+            # 3*3
+            j = roi_idx[i]
+            RoI = RoIs[j]
+            if RoI != [None]:
                 _area = cal_area(RoI)
-                partial_3 += _area
-                baseline_3 += layersize[i] * layersize[i]
-
             else:
-                # 1*1
-                gt_boxes = RoI
+                _area = layersize[i] * layersize[i]
+            partial_3 += _area * abs(channels[i])
+            baseline_3 += layersize[i] * layersize[i] * abs(channels[i])
+
+        else:
+            # 1*1
+            j = roi_idx[i]
+            gt_boxes = RoIs[j]
+            if gt_boxes != [None]:
                 new_gt_boxes = []
                 for temp in gt_boxes:
                     temp_RoI = np.asarray(temp).reshape(-1, 2)
@@ -107,17 +121,16 @@ for batch_i in range(3, 499):
                 gt_boxes = shrink(new_gt_boxes, 2)
                 RoI = gt_boxes
                 _area = cal_area(RoI)
-                partial_1 += _area
-                baseline_1 += layersize[i] * layersize[i]
-        text = str(baseline_1) + "|" + str(baseline_3) + "|" + str(partial_1) + "|" + str(partial_3) + "\n"
-        resfile.write(text)
-        b1 += baseline_1
-        b3 += baseline_3
-        p1 += partial_1
-        p3 += partial_3
-        count += 1
-        print(baseline_1, baseline_3, partial_1, partial_3)
-    else:
-        print("error")
+            else:
+                _area = layersize[i] * layersize[i]
+            partial_1 += _area * abs(channels[i])
+            baseline_1 += layersize[i] * layersize[i] * abs(channels[i])
+    text = str(baseline_1) + "|" + str(baseline_3) + "|" + str(partial_1) + "|" + str(partial_3) + "\n"
+    resfile.write(text)
+    b1 += baseline_1
+    p1 += partial_1
+    b3 += baseline_3
+    p3 += partial_3
+    count += 1
 resfile.close()
-print(b1 / count, b3 / count, p1 / count, p3 / count)
+print(b1/count, b3/count, p1/count, p3/count)

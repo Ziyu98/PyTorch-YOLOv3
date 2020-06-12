@@ -1,7 +1,7 @@
 from __future__ import division
 
 from models import *
-from models_2 import *
+from models_2_copy import *
 from utils.utils import *
 from utils.datasets import *
 
@@ -86,36 +86,7 @@ def RoI_extension(RoIs, rate):
 def RoI_for_layers(RoI):
     # input RoI is the region of interest for the raw frame
     # this function is to calculate the RoI for padding function in each layer
-    RoIs = []
-    RoIs_padded = []
-    temp_RoI = []   # to reshape
-    for i in range(38):
-        if i != 29 and i != 32 and i != 35:
-            gt_boxes = []
-            for temp in RoI:
-                temp_RoI = np.asarray(temp).reshape(-1, 2)
-                gt_boxes.append(temp_RoI)
-            new_gt_boxes = shrink(gt_boxes, -1)
-            if layer_type[i] == 1:
-                # offset = -1
-                RoIs.append(new_gt_boxes)
-
-            elif layer_type[i] == 3:
-            #
-                for _list in new_gt_boxes:
-                    _list[:] = [int(x / 2) for x in _list]
-                RoIs.append(new_gt_boxes)
-        elif i == 29:
-            new_gt_boxes = RoI
-            RoIs.append(new_gt_boxes)
-        elif i == 32:
-            new_gt_boxes = RoIs[23]
-            RoIs.append(new_gt_boxes)
-        elif i == 35:
-            new_gt_boxes = RoIs[14]
-            RoIs.append(new_gt_boxes)
-        # update RoI input for next layer
-        # RoI will be modified by the padding function
+    def padding_RoI(new_gt_boxes):
         gt_boxes = []
         for temp in new_gt_boxes:
             temp_RoI = np.asarray(temp).reshape(-1, 2)
@@ -160,8 +131,92 @@ def RoI_for_layers(RoI):
             g = [item for sublist in zip(x, y) for item in sublist]
             g = g[:len(g) - 2]
             new_gt_boxes.append(g)
-        RoIs_padded.append(new_gt_boxes)
-        RoI = new_gt_boxes
+        return new_gt_boxes
+    RoIs = []
+    RoIs_padded = []
+    temp_RoI = []   # to reshape
+    flag = 0
+    for i in range(38):
+        if flag == 0:
+            if i != 29 and i != 32 and i != 35:
+                gt_boxes = []
+                for temp in RoI:
+                    temp_RoI = np.asarray(temp).reshape(-1, 2)
+                    gt_boxes.append(temp_RoI)
+                new_gt_boxes = shrink(gt_boxes, -1)
+                if layer_type[i] == 1:
+                    # offset = -1
+                    RoIs.append(new_gt_boxes)
+
+                elif layer_type[i] == 3:
+                #
+                    for _list in new_gt_boxes:
+                        _list[:] = [int(x / 2) for x in _list]
+                    RoIs.append(new_gt_boxes)
+            elif i == 29:
+                new_gt_boxes = RoI
+                RoIs.append(new_gt_boxes)
+            elif i == 32:
+                new_gt_boxes = RoIs[23]
+                RoIs.append(new_gt_boxes)
+            elif i == 35:
+                new_gt_boxes = RoIs[14]
+                RoIs.append(new_gt_boxes)
+            # update RoI input for next layer
+            # RoI will be modified by the padding function
+            new_gt_boxes = padding_RoI(new_gt_boxes)
+            g = new_gt_boxes[0]
+            if len(g) == 8:
+                [x1, y1, x2, y2, x3, y3, x4, y4] = g
+                temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
+                temp_list.sort()
+                w = layersize[i] - 1
+                if temp_list == [0, 0, 0, 0, w, w, w, w]:
+                    flag = 1
+            RoIs_padded.append(new_gt_boxes)
+            RoI = new_gt_boxes
+        else:
+            if i == 32:
+                #
+                new_gt_boxes = RoIs[23]
+                RoIs.append(new_gt_boxes)
+                if new_gt_boxes != None:
+                    flag = 0
+                    new_gt_boxes = padding_RoI(new_gt_boxes)
+                    g = new_gt_boxes[0]
+                    if len(g) == 8:
+                        [x1, y1, x2, y2, x3, y3, x4, y4] = g
+                        temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
+                        temp_list.sort()
+                        w = layersize[i] - 1
+                        if temp_list == [0, 0, 0, 0, w, w, w, w]:
+                            flag = 1
+                    RoIs_padded.append(new_gt_boxes)
+                    RoI = new_gt_boxes
+                else:
+                    RoIs_padded.append(None)
+            elif i == 35:
+                new_gt_boxes = RoIs[14]
+                RoIs.append(new_gt_boxes)
+                if new_gt_boxes != None:
+                    flag = 0
+                    new_gt_boxes = padding_RoI(new_gt_boxes)
+                    g = new_gt_boxes[0]
+                    if len(g) == 8:
+                        [x1, y1, x2, y2, x3, y3, x4, y4] = g
+                        temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
+                        temp_list.sort()
+                        w = layersize[i] - 1
+                        if temp_list == [0, 0, 0, 0, w, w, w, w]:
+                            flag = 1
+                    RoIs_padded.append(new_gt_boxes)
+                    RoI = new_gt_boxes
+                else:
+                    RoIs_padded.append(None)
+
+            else:
+                RoIs.append(None)
+                RoIs_padded.append(None)
     return RoIs, RoIs_padded 
 
 def _store(Layers, RoI):
@@ -174,14 +229,18 @@ def _store(Layers, RoI):
         RoI = RoIs[i]
         RoI_padded = RoIs_padded[i]
         temp_list = []
-        if len(RoI[0]) == 8:
-            [x1, y1, x2, y2, x3, y3, x4, y4] = RoI[0]
-            temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
-            temp_list.sort()
-        if temp_list == [0, 0, 0, 0, width, width, height, height]:
+        idx = []
+        if RoI is not None:
+            if len(RoI[0]) == 8:
+                [x1, y1, x2, y2, x3, y3, x4, y4] = RoI[0]
+                temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
+                temp_list.sort()
+            if temp_list == [0, 0, 0, 0, width, width, height, height]:
             #
-            idx = None
+                idx = None
         else:
+            idx = None
+        if idx is not None:
             img = Image.new('L', (width, height), 0)
             for poly in RoI:
                 ImageDraw.Draw(img).polygon(poly, outline=1, fill=1)
@@ -194,7 +253,6 @@ def _store(Layers, RoI):
             mask = mask_padded - mask
             idx = np.transpose(np.nonzero(mask))
         
-        if idx is not None:
             for _idx in idx:
                 [x, y] = _idx
                 key = tuple([x, y])
@@ -345,7 +403,9 @@ def format_result(detections):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image_folder", type=str, default="data/samples", help="path to dataset")
+    parser.add_argument("--image_folder", type=str, default="data/samples_4", help="path to dataset")
+    parser.add_argument("--sample_index", type=int, default=1, help="the index of sample folder")
+    parser.add_argument("--extension", type=int, default=1, help="extension for RoIs")
     parser.add_argument("--model_def", type=str, default="config/yolov3.cfg", help="path to model definition file")
     parser.add_argument("--model_2_def", type=str, default="config/yolov3_2.cfg", help="path to model_2 definition file")
     parser.add_argument("--weights_path", type=str, default="weights/yolov3.weights", help="path to weights file")
@@ -366,7 +426,7 @@ if __name__ == "__main__":
     # Set up model
     model = Darknet(opt.model_def, img_size=opt.img_size).to(device)
     model_2 = Darknet_2(opt.model_2_def, img_size=opt.img_size).to(device)
-    extend = 1
+    extend = opt.extension
     # 
     idx_for_mv = 4200
 
@@ -400,7 +460,7 @@ if __name__ == "__main__":
     
     distance = opt.reuse_d
     start_point = opt.start_p    #[0, distance - 1]
-    idx_sam = 1
+    idx_sam = opt.sample_index
     img_shape = (1080, 1920)
     os.makedirs('res_for_s{}_e{}_dist{}_{}'.format(idx_sam, extend, distance, start_point), exist_ok=True)
     timefile = open('res_for_s{}_e{}_dist{}_{}/_time'.format(idx_sam, extend, distance, start_point), 'w')
@@ -440,7 +500,8 @@ if __name__ == "__main__":
                 for j in range(1, distance):
                     Region_of_interests = get_RoI(bboxes, batch_i + j + idx_for_mv)
                     # if expand?
-                    #Region_of_interests = RoI_extension(Region_of_interests, 0.5)
+                    if extend != 1:
+                        Region_of_interests = RoI_extension(Region_of_interests, (1 - 1. / extend))
                     temp_his, temp_RoI = _store(Layers, Region_of_interests)
                     total_dicts.append(temp_his)
                     total_RoIs.append(temp_RoI)               # dictionary for the following n frames
@@ -458,9 +519,12 @@ if __name__ == "__main__":
                 for layer_i in range(38):
                     RoI = RoIs[layer_i]
                     RoIfile.write("***************\n")
-                    for temp in RoI:
-                        RoIfile.write(json.dumps(temp))
-                        RoIfile.write("\n")
+                    if RoI is not None:
+                        for temp in RoI:
+                            RoIfile.write(json.dumps(temp))
+                            RoIfile.write("\n")
+                    else:
+                        RoIfile.write("None\n")
                 for j in range(len(layer_index)):
                     temp = total_dicts[idx_for_partial][j]
                     locals()['_layer' + str(layer_index[j])] = temp
@@ -486,6 +550,7 @@ if __name__ == "__main__":
             resfile.close()
     RoIfile.close()
     timefile.close()
+
 
 
 
