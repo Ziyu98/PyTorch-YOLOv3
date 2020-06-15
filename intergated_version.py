@@ -421,14 +421,14 @@ if __name__ == "__main__":
     opt = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
+    torch.set_num_threads(1)
 
     # Set up model
     model = Darknet(opt.model_def, img_size=opt.img_size).to(device)
     model_2 = Darknet_2(opt.model_2_def, img_size=opt.img_size).to(device)
     extend = opt.extension
     # 
-    idx_for_mv = 4200
+    idx_for_mv = 9210
 
     if opt.weights_path.endswith(".weights"):
         # Load darknet weights
