@@ -350,14 +350,14 @@ def get_RoI(prev_boxes, frame_id):
             roi = mv_roi.geoms[j]
             if roi.area > 1000:
                 rate_1, rate_2 = method_1(roi, prev_boxes)
-                if(rate_1 > T1 and rate_1 < T2) or rate_2 > T3:
+                if(rate_1 > T1) or rate_2 > T3:
                     r = r.union(roi)
                 elif rate_1 <= T1:
                     if compare_with_edge(roi):
                         r = r.union(roi)
     elif mv_roi.area > 1000:
         rate_1, rate_2 = method_1(mv_roi, prev_boxes)
-        if (rate_1 > T1 and rate_1 < T2) or (rate_2 > T3):
+        if (rate_1 > T1) or (rate_2 > T3):
             r = r.union(mv_roi)
         elif rate_1 <= T1:
             if compare_with_edge(mv_roi):
@@ -421,7 +421,7 @@ if __name__ == "__main__":
     opt = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch.set_num_threads(1)
+    #torch.set_num_threads(1)
 
     # Set up model
     model = Darknet(opt.model_def, img_size=opt.img_size).to(device)
