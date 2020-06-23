@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 from shapely import geometry
 import pyclipper
+import time
 
 from utils.parse_config import *
 from utils.utils import build_targets, to_cpu, non_max_suppression
@@ -15,8 +16,9 @@ from im2col import im2col_indices
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
-def my_conv(X, W, b, stride=1, padding=1):
-    cache = W, b, stride, padding
+def my_conv(X, W, b, RoIs, layersize, stride=1, padding=1):
+    # layersize and RoIs should be the layersize and RoIs of next layer
+    #p_t = time.time()
     n_filters, d_filters, h_filters, w_filters = W.shape
     n_x, d_x, h_x, w_x = X.shape
     h_out = (h_x - h_filters + 2 * padding) // stride + 1
@@ -28,13 +30,37 @@ def my_conv(X, W, b, stride=1, padding=1):
     h_out, w_out = int(h_out), int(w_out)
     X_col = im2col_indices(X, h_filters, w_filters, padding=padding, stride=stride)
     W_col = W.reshape(n_filters, -1)
-    #print(X_col.shape, W_col.shape)
-    out = W_col @ X_col 
+    #c_t = time.time()
+    #print('t_1: %s' % (c_t - p_t))
+    #p_t = time.time()
+    if RoIs is not None:
+        res = np.zeros((W_col.shape[0], X_col.shape[1])).astype('float32')
+        img = Image.new('L', (layersize, layersize), 0)
+        for poly in RoIs:
+            ImageDraw.Draw(img).polygon(poly, outline=1, fill=1)
+        img = np.array(img)
+        idx = np.transpose(np.nonzero(img))
+        _list = []
+        for [x, y] in idx:
+            temp = x * layersize + y
+            _list.append(temp)
+        X_col = X_col[:, _list]
+        #c_t = time.time()
+        #print('process X_col time: %s' % (c_t - p_t))
+        #p_t = time.time()
+        out = W_col @ X_col 
+        #c_t = time.time()
+        #print('partial t_3: %s' % (c_t - p_t))
+        res[:, _list] = out
+    else:
+        res = W_col @ X_col
+        #c_t = time.time()
+        #print('full t_3: %s' % (c_t - p_t))
     b = b.reshape(-1, 1)
-    out += b
-    out = out.reshape(n_filters, h_out, w_out, n_x)
-    out = out.transpose(3, 0, 1, 2)
-    return out
+    res += b
+    res = res.reshape(n_filters, h_out, w_out, n_x)
+    res = res.transpose(3, 0, 1, 2)
+    return res
 
 def create_modules_2(module_defs):
     """
@@ -52,6 +78,7 @@ def create_modules_2(module_defs):
             filters = int(module_def["filters"])
             kernel_size = int(module_def["size"])
             pad = (kernel_size - 1) // 2
+            n_size = int(module_def["next_size"])
             """modules.add_module(
                 f"conv_{module_i}",
                 nn.Conv2d(
@@ -64,7 +91,7 @@ def create_modules_2(module_defs):
                 ),
             )"""
             weight_nums[module_i] = [filters, output_filters[-1], kernel_size, kernel_size]
-            my_conv_layer = MyConvLayer(int(module_def["stride"]), pad)
+            my_conv_layer = MyConvLayer(n_size, int(module_def["stride"]), pad)
             modules.add_module(f"conv_{module_i}", my_conv_layer)
             if bn:
                 modules.add_module(f"batch_norm_{module_i}", nn.BatchNorm2d(filters, momentum=0.9, eps=1e-5))
@@ -136,17 +163,19 @@ class EmptyLayer(nn.Module):
         super(EmptyLayer, self).__init__()
 
 class MyConvLayer(nn.Module):
-    def __init__(self, stride, padding):
+    def __init__(self, next_size, stride, padding):
         super(MyConvLayer, self).__init__()
         self.stride = stride
         self.padding = padding
+        self.next_size = next_size
     
-    def forward(self, input_x, input_w, input_b):
+    def forward(self, input_x, input_w, input_b, next_RoI):
         s = self.stride
         p = self.padding
+        n_s = self.next_size
         # input_x and input_w to numpy
         input_x, input_w, input_b = input_x.numpy(), input_w.numpy(), input_b.numpy()
-        out = my_conv(input_x, input_w, input_b, s, p)
+        out = my_conv(input_x, input_w, input_b, next_RoI, n_s, s, p)
         # out to tensor
         out = torch.from_numpy(out) 
         return out
@@ -331,9 +360,15 @@ class Darknet_2(nn.Module):
                     b = bias_dict[i]
                 else:
                     b = torch.zeros(w.shape[0])
-                x = module[0](x, w, b)
+                _idx = int(module_def["next_RoI"])
+                if _idx == 0:
+                    RoI = None
+                else:
+                    RoI = locals()['RoI_' + str(_idx)]
+                x = module[0](x, w, b, RoI)
                 if bn:
                     x = module[1](x)
+                if module_def["activation"] == "leaky":
                     x = module[2](x)
             elif module_def["type"] == "route":
                 x = torch.cat([layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)

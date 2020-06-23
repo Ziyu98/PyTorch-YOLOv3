@@ -5,15 +5,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
-
+import time
 from utils.parse_config import *
 from utils.utils import build_targets, to_cpu, non_max_suppression
-from im2col import im2col_indices
+from new_im2col import im2col
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 def my_conv(X, W, b, stride=1, padding=1):
-    cache = W, b, stride, padding
+    #p_t = time.time()
     n_filters, d_filters, h_filters, w_filters = W.shape
     n_x, d_x, h_x, w_x = X.shape
     h_out = (h_x - h_filters + 2 * padding) // stride + 1
@@ -22,11 +22,18 @@ def my_conv(X, W, b, stride=1, padding=1):
     #print(h_out, w_out)
     #if not h_out.is_integer() or not w_out.is_integer():
         #raise Exception('Invalid output dimension!')
-    h_out, w_out = int(h_out), int(w_out)
-    X_col = im2col_indices(X, h_filters, w_filters, padding=padding, stride=stride)
+    #h_out, w_out = int(h_out), int(w_out)
+    #X_col = im2col_indices(X, h_filters, w_filters, padding=padding, stride=stride)
+    X_col = im2col(X, h_filters, w_filters, stride=stride, pad=padding)
     W_col = W.reshape(n_filters, -1)
+    print('X shape: ', X_col.shape, 'W shape: ', W_col.shape)
+    #c_t = time.time()
+    #print('t_1: %s' % (c_t - p_t))
     #print(X_col.shape, W_col.shape)
+    #p_t = time.time()
     out = W_col @ X_col 
+    #c_t = time.time()
+    #print('full t_3: %s' % (c_t - p_t))
     b = b.reshape(-1, 1)
     out += b
     out = out.reshape(n_filters, h_out, w_out, n_x)
@@ -296,9 +303,13 @@ class Darknet(nn.Module):
                     b = bias_dict[i]
                 else:
                     b = torch.zeros(w.shape[0])
+                p_t = time.time()
                 x = module[0](x, w, b)
+                c_t = time.time()
+                print('conv time: %s' % (c_t - p_t))
                 if bn:
                     x = module[1](x)
+                if module_def["activation"] == "leaky":
                     x = module[2](x)
             elif module_def["type"] == "route":
                 x = torch.cat([layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)
