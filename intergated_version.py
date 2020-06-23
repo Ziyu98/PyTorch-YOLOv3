@@ -1,7 +1,7 @@
 from __future__ import division
 
-from models import *
-from models_2_copy import *
+from my_conv_models import *
+from my_conv_models_2_copy import *
 from utils.utils import *
 from utils.datasets import *
 
@@ -404,7 +404,7 @@ def format_result(detections):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--image_folder", type=str, default="data/samples_4", help="path to dataset")
-    parser.add_argument("--sample_index", type=int, default=1, help="the index of sample folder")
+    parser.add_argument("--sample_index", type=int, default=4, help="the index of sample folder")
     parser.add_argument("--extension", type=int, default=1, help="extension for RoIs")
     parser.add_argument("--model_def", type=str, default="config/yolov3.cfg", help="path to model definition file")
     parser.add_argument("--model_2_def", type=str, default="config/yolov3_2.cfg", help="path to model_2 definition file")
@@ -416,8 +416,8 @@ if __name__ == "__main__":
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
-    parser.add_argument("--reuse_d", type=int, help="reuse distance")
-    parser.add_argument("--start_p", type=int, help="start point")
+    parser.add_argument("--reuse_d", type=int, default=2, help="reuse distance")
+    parser.add_argument("--start_p", type=int, default=0, help="start point")
     opt = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -432,7 +432,7 @@ if __name__ == "__main__":
 
     if opt.weights_path.endswith(".weights"):
         # Load darknet weights
-        model.load_darknet_weights(opt.weights_path)
+        weights_dict, bias_dict = model.load_darknet_weights(opt.weights_path)
     else:
         # Load checkpoint weights
         model.load_state_dict(torch.load(opt.weights_path))
@@ -440,7 +440,7 @@ if __name__ == "__main__":
     model.eval()  # Set in evaluation mode
     if opt.weights_path.endswith(".weights"):
         # Load darknet weights
-        model_2.load_darknet_weights(opt.weights_path)
+        weights_dict_2, bias_dict_2 = model_2.load_darknet_weights(opt.weights_path)
     else:
         # Load checkpoint weights
         model_2.load_state_dict(torch.load(opt.weights_path))
@@ -479,7 +479,7 @@ if __name__ == "__main__":
                 total_dicts = []
                 total_RoIs = []
                 with torch.no_grad():
-                    detections, layers = model(input_imgs)
+                    detections, layers = model(input_imgs, weights_dict, bias_dict)
                     detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
                 current_time = time.time()
                 inference_time = datetime.timedelta(seconds=current_time - prev_time)
@@ -536,7 +536,7 @@ if __name__ == "__main__":
 
                 with torch.no_grad():
                     prev_time = time.time()
-                    detections = model_2(input_imgs, _layer1, _layer2, _layer3, _layer4, _layer5, _layer6, _layer7, _layer8, _layer9, _layer10, _layer11, _layer12, _layer13, _layer14, _layer15, _layer16, _layer17, _layer18, _layer19, _layer20, _layer21, _layer22, _layer23, _layer24, _layer25, _layer26, _layer27, _layer28, _layer29, _layer30, _layer32, _layer34, _layer37, _layer39, _layer41, _layer44, _layer46, _layer48, _RoI_1, _RoI_2, _RoI_3, _RoI_4, _RoI_5, _RoI_6, _RoI_7, _RoI_8, _RoI_9, _RoI_10, _RoI_11, _RoI_12, _RoI_13, _RoI_14, _RoI_15, _RoI_16, _RoI_17, _RoI_18, _RoI_19, _RoI_20, _RoI_21, _RoI_22, _RoI_23, _RoI_24, _RoI_25, _RoI_26, _RoI_27, _RoI_28, _RoI_29, _RoI_30, _RoI_32, _RoI_34, _RoI_37, _RoI_39, _RoI_41, _RoI_44, _RoI_46, _RoI_48)
+                    detections = model_2(input_imgs, weights_dict_2, bias_dict_2, _layer1, _layer2, _layer3, _layer4, _layer5, _layer6, _layer7, _layer8, _layer9, _layer10, _layer11, _layer12, _layer13, _layer14, _layer15, _layer16, _layer17, _layer18, _layer19, _layer20, _layer21, _layer22, _layer23, _layer24, _layer25, _layer26, _layer27, _layer28, _layer29, _layer30, _layer32, _layer34, _layer37, _layer39, _layer41, _layer44, _layer46, _layer48, _RoI_1, _RoI_2, _RoI_3, _RoI_4, _RoI_5, _RoI_6, _RoI_7, _RoI_8, _RoI_9, _RoI_10, _RoI_11, _RoI_12, _RoI_13, _RoI_14, _RoI_15, _RoI_16, _RoI_17, _RoI_18, _RoI_19, _RoI_20, _RoI_21, _RoI_22, _RoI_23, _RoI_24, _RoI_25, _RoI_26, _RoI_27, _RoI_28, _RoI_29, _RoI_30, _RoI_32, _RoI_34, _RoI_37, _RoI_39, _RoI_41, _RoI_44, _RoI_46, _RoI_48)
                     detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres) 
                     current_time = time.time()
                     inference_time = datetime.timedelta(seconds=current_time - prev_time)

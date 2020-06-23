@@ -5,6 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
+from PIL import Image, ImageDraw
+from shapely import geometry
+import pyclipper
 
 from utils.parse_config import *
 from utils.utils import build_targets, to_cpu, non_max_suppression
@@ -33,7 +36,7 @@ def my_conv(X, W, b, stride=1, padding=1):
     out = out.transpose(3, 0, 1, 2)
     return out
 
-def create_modules(module_defs):
+def create_modules_2(module_defs):
     """
     Constructs module list of layer blocks from module configuration in module_defs
     """
@@ -98,13 +101,19 @@ def create_modules(module_defs):
             num_classes = int(module_def["classes"])
             img_size = int(hyperparams["height"])
             # Define detection layer
-            yolo_layer = YOLOLayer(anchors, num_classes, img_size)
+            yolo_layer = YOLOLayer_2(anchors, num_classes, img_size)
             modules.add_module(f"yolo_{module_i}", yolo_layer)
+        
+        elif module_def["type"] == "padding":
+            layersize = int(module_def["layersize"])
+            layertype = int(module_def["layertype"])
+            padding_layer = PADLayer(layersize, layertype)
+            modules.add_module(f"padding_{module_i}", padding_layer)
         # Register module list and number of output filters
         module_list.append(modules)
         output_filters.append(filters)
 
-    return hyperparams, module_list, weight_nums
+    return hyperparams, module_list, weight_nums 
 
 
 class Upsample(nn.Module):
@@ -142,11 +151,37 @@ class MyConvLayer(nn.Module):
         out = torch.from_numpy(out) 
         return out
 
-class YOLOLayer(nn.Module):
+class PADLayer(nn.Module):
+    def __init__(self, layersize, layertype):
+        super(PADLayer, self).__init__()
+        self.layersize = layersize
+        self.layertype = layertype
+    
+    def forward(self, input_x, RoIs, his_info):
+        if RoIs is not None:
+            width = self.layersize
+            height = self.layersize
+            shape_3 = input_x.shape[1]
+            RoI = []
+            img = Image.new('L', (width, height), 0)
+            for poly in RoIs:
+                ImageDraw.Draw(img).polygon(poly, outline=1, fill=1)
+            img = np.array(img)
+            _img = np.repeat(img[np.newaxis, :, :], shape_3, axis=0)
+            _img = _img[np.newaxis, :, :, :]
+            mask = torch.tensor(_img)
+            input_x = torch.mul(input_x, mask)
+            for key in his_info:
+                [x, y] = key
+                value = his_info[key]
+                input_x[0, :, x, y] = value
+        return input_x
+
+class YOLOLayer_2(nn.Module):
     """Detection layer"""
 
     def __init__(self, anchors, num_classes, img_dim=416):
-        super(YOLOLayer, self).__init__()
+        super(YOLOLayer_2, self).__init__()
         self.anchors = anchors
         self.num_anchors = len(anchors)
         self.num_classes = num_classes
@@ -270,19 +305,19 @@ class YOLOLayer(nn.Module):
             return output, total_loss
 
 
-class Darknet(nn.Module):
+class Darknet_2(nn.Module):
     """YOLOv3 object detection model"""
 
     def __init__(self, config_path, img_size=416):
-        super(Darknet, self).__init__()
+        super(Darknet_2, self).__init__()
         self.module_defs = parse_model_config(config_path)
-        self.hyperparams, self.module_list, self.weight_nums  = create_modules(self.module_defs)
+        self.hyperparams, self.module_list, self.weight_nums = create_modules_2(self.module_defs)
         self.yolo_layers = [layer[0] for layer in self.module_list if hasattr(layer[0], "metrics")]
         self.img_size = img_size
         self.seen = 0
         self.header_info = np.array([0, 0, 0, self.seen, 0], dtype=np.int32)
 
-    def forward(self, x, weights_dict, bias_dict, targets=None):
+    def forward(self, x, weights_dict, bias_dict, input_n1, input_n2, input_n3, input_n4, input_n5, input_n6, input_n7, input_n8, input_n9, input_n10, input_n11, input_n12, input_n13, input_n14, input_n15, input_n16, input_n17, input_n18, input_n19, input_n20, input_n21, input_n22, input_n23, input_n24, input_n25, input_n26, input_n27, input_n28, input_n29, input_n30, input_n32, input_n34, input_n37, input_n39, input_n41, input_n44, input_n46, input_n48, RoI_1, RoI_2, RoI_3, RoI_4, RoI_5, RoI_6, RoI_7, RoI_8, RoI_9, RoI_10, RoI_11, RoI_12, RoI_13, RoI_14, RoI_15, RoI_16, RoI_17, RoI_18, RoI_19, RoI_20, RoI_21, RoI_22, RoI_23, RoI_24, RoI_25, RoI_26, RoI_27, RoI_28, RoI_29, RoI_30, RoI_32, RoI_34, RoI_37, RoI_39, RoI_41, RoI_44, RoI_46, RoI_48, targets=None):
         img_dim = x.shape[2]
         loss = 0
         layer_outputs, yolo_outputs = [], []
@@ -309,9 +344,14 @@ class Darknet(nn.Module):
                 x, layer_loss = module[0](x, targets, img_dim)
                 loss += layer_loss
                 yolo_outputs.append(x)
+            elif module_def["type"] == "padding":
+                _his_index = int(module_def["his_idx"])
+                temp = locals()['input_n' + str(_his_index)]
+                RoI = locals()['RoI_' + str(_his_index)]
+                x = module[0](x, RoI, temp)
             layer_outputs.append(x)
         yolo_outputs = to_cpu(torch.cat(yolo_outputs, 1))
-        return yolo_outputs, layer_outputs if targets is None else (loss, yolo_outputs)
+        return yolo_outputs if targets is None else (loss, yolo_outputs)
 
     def load_darknet_weights(self, weights_path):
         """Parses and loads the weights stored in 'weights_path'"""
@@ -368,7 +408,7 @@ class Darknet(nn.Module):
                 my_weights_dict[i] = conv_w
                 ptr += num_w
         return my_weights_dict, my_bias_dict
-
+        
     def save_darknet_weights(self, path, cutoff=-1):
         """
             @:param path    - path of the new weights file
