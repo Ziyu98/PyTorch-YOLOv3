@@ -12,7 +12,7 @@ import time
 
 from utils.parse_config import *
 from utils.utils import build_targets, to_cpu, non_max_suppression
-from im2col import im2col_indices
+from new_im2col import im2col
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
@@ -27,14 +27,14 @@ def my_conv(X, W, b, RoIs, layersize, stride=1, padding=1):
     #print(h_out, w_out)
     #if not h_out.is_integer() or not w_out.is_integer():
         #raise Exception('Invalid output dimension!')
-    h_out, w_out = int(h_out), int(w_out)
-    X_col = im2col_indices(X, h_filters, w_filters, padding=padding, stride=stride)
-    W_col = W.reshape(n_filters, -1)
+    
+    X_col = im2col(X, h_filters, w_filters, stride=stride, pad=padding)
+    W_col = W.reshape(n_filters, -1).T
     #c_t = time.time()
     #print('t_1: %s' % (c_t - p_t))
     #p_t = time.time()
     if RoIs is not None:
-        res = np.zeros((W_col.shape[0], X_col.shape[1])).astype('float32')
+        res = np.zeros((W_col.shape[1], X_col.shape[0])).astype('float32')
         img = Image.new('L', (layersize, layersize), 0)
         for poly in RoIs:
             ImageDraw.Draw(img).polygon(poly, outline=1, fill=1)
@@ -44,16 +44,16 @@ def my_conv(X, W, b, RoIs, layersize, stride=1, padding=1):
         for [x, y] in idx:
             temp = x * layersize + y
             _list.append(temp)
-        X_col = X_col[:, _list]
+        X_col = X_col[_list, :]
         #c_t = time.time()
         #print('process X_col time: %s' % (c_t - p_t))
         #p_t = time.time()
-        out = W_col @ X_col 
+        out = np.dot(X_col, W_col).T
         #c_t = time.time()
         #print('partial t_3: %s' % (c_t - p_t))
         res[:, _list] = out
     else:
-        res = W_col @ X_col
+        res = np.dot(X_col, W_col).T
         #c_t = time.time()
         #print('full t_3: %s' % (c_t - p_t))
     b = b.reshape(-1, 1)

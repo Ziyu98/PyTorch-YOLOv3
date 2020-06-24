@@ -25,13 +25,13 @@ def my_conv(X, W, b, stride=1, padding=1):
     #h_out, w_out = int(h_out), int(w_out)
     #X_col = im2col_indices(X, h_filters, w_filters, padding=padding, stride=stride)
     X_col = im2col(X, h_filters, w_filters, stride=stride, pad=padding)
-    W_col = W.reshape(n_filters, -1)
-    print('X shape: ', X_col.shape, 'W shape: ', W_col.shape)
+    W_col = W.reshape(n_filters, -1).T
     #c_t = time.time()
     #print('t_1: %s' % (c_t - p_t))
     #print(X_col.shape, W_col.shape)
     #p_t = time.time()
-    out = W_col @ X_col 
+    #out = W_col @ X_col 
+    out = np.dot(X_col, W_col).T
     #c_t = time.time()
     #print('full t_3: %s' % (c_t - p_t))
     b = b.reshape(-1, 1)
@@ -303,10 +303,10 @@ class Darknet(nn.Module):
                     b = bias_dict[i]
                 else:
                     b = torch.zeros(w.shape[0])
-                p_t = time.time()
+                #p_t = time.time()
                 x = module[0](x, w, b)
-                c_t = time.time()
-                print('conv time: %s' % (c_t - p_t))
+                #c_t = time.time()
+                #print('conv time: %s' % (c_t - p_t))
                 if bn:
                     x = module[1](x)
                 if module_def["activation"] == "leaky":

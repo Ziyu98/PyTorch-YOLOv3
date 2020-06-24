@@ -489,7 +489,7 @@ if __name__ == "__main__":
                 # process detection results:
                 bboxes = []
                 res = format_result(detections)
-                #print(res)
+                print(res)
                 if len(res) > 0:
                     bboxes = np.zeros(4 * len(res)).reshape(-1, 4)
                     bboxes[:, :] = res[:, 2 : 6]
@@ -544,7 +544,7 @@ if __name__ == "__main__":
                     text = "partial inference, time = " + str(inference_time) + "\n"
                     timefile.write(text)
                     res = format_result(detections)
-                    #print(res)
+                    print(res)
                 idx_for_partial += 1
             np.savetxt(resfile, res, fmt='%.3f')
             resfile.close()
