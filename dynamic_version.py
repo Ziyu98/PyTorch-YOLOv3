@@ -48,7 +48,7 @@ def shrink(bboxes, offset):
         shrinked_bbox = pco.Execute(offset)
         if len(shrinked_bbox) > 0:
             shrinked_bbox = np.array(shrinked_bbox)[0]
-            shrinked_bbox = np.asarray(shrinked_bbox)
+            shrinked_bbox = np.array(shrinked_bbox)
             shrinked_bbox = shrinked_bbox.ravel().tolist()
             shrinked_bboxes.append(shrinked_bbox)
     return shrinked_bboxes
@@ -167,8 +167,7 @@ def RoI_for_layers(RoI):
             new_gt_boxes = padding_RoI(new_gt_boxes)
             g = new_gt_boxes[0]
             if len(g) == 8:
-                [x1, y1, x2, y2, x3, y3, x4, y4] = g
-                temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
+                temp_list = g
                 temp_list.sort()
                 w = layersize[i] - 1
                 if temp_list == [0, 0, 0, 0, w, w, w, w]:
@@ -185,8 +184,7 @@ def RoI_for_layers(RoI):
                     new_gt_boxes = padding_RoI(new_gt_boxes)
                     g = new_gt_boxes[0]
                     if len(g) == 8:
-                        [x1, y1, x2, y2, x3, y3, x4, y4] = g
-                        temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
+                        temp_list = g
                         temp_list.sort()
                         w = layersize[i] - 1
                         if temp_list == [0, 0, 0, 0, w, w, w, w]:
@@ -203,8 +201,7 @@ def RoI_for_layers(RoI):
                     new_gt_boxes = padding_RoI(new_gt_boxes)
                     g = new_gt_boxes[0]
                     if len(g) == 8:
-                        [x1, y1, x2, y2, x3, y3, x4, y4] = g
-                        temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
+                        temp_list = g
                         temp_list.sort()
                         w = layersize[i] - 1
                         if temp_list == [0, 0, 0, 0, w, w, w, w]:
@@ -230,10 +227,9 @@ def _store(Layers, RoI):
         RoI_padded = RoIs_padded[i]
         temp_list = []
         idx = []
-        if RoI is not None:
+        if RoI is not None and len(RoI) > 0:
             if len(RoI[0]) == 8:
-                [x1, y1, x2, y2, x3, y3, x4, y4] = RoI[0]
-                temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
+                temp_list = RoI[0]
                 temp_list.sort()
             if temp_list == [0, 0, 0, 0, width, width, height, height]:
             #
@@ -345,44 +341,58 @@ def get_RoI(prev_boxes, frame_id):
     T1 = 0.4
     T2 = 0.7
     T3 = 0.8
+    flag = 0   # 0: do nothing, 1: partial, 2: full
     if mv_roi.geom_type == 'MultiPolygon':
         num = len(mv_roi.geoms)
         for j in range(num):
             roi = mv_roi.geoms[j]
             if roi.area > 1000:
                 rate_1, rate_2 = method_1(roi, prev_boxes)
-                if(rate_1 > T1 and rate_1 < T2): #or rate_2 > T3:
+                if(rate_1 < T1 and rate_1 > 0) or rate_2 > T3:
                     r = r.union(roi)
-                #elif rate_1 == 0:
-                    #if compare_with_edge(roi):
-                        #r = r.union(roi)
+                    flag = 2
+                elif rate_1 == 0:
+                    if compare_with_edge(roi):
+                        r = r.union(roi)
+                        flag = 2
+                elif rate_1 > T1 and rate_1 < T2:
+                    r = r.union(roi)             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+                    flag = 1
     elif mv_roi.area > 1000:
         rate_1, rate_2 = method_1(mv_roi, prev_boxes)
-        if (rate_1 > T1 and rate_1 < T2): #or (rate_2 > T3):
+        if (rate_1 < T1 and rate_1 > 0) or (rate_2 > T3):
             r = r.union(mv_roi)
-        #elif rate_1 <= T1:
-            #if compare_with_edge(mv_roi):
-                #r = r.union(mv_roi) 
-    res = []
-    if r.geom_type == 'MultiPolygon':
-        polysize = len(r.geoms)
-        for i in range(polysize):
-            ploy = r.geoms[i]
-            x, y = ploy.exterior.coords.xy
-            _x = [int(x[i] * (416 / 1920)) for i in range(len(x))]
-            _y = [int(y[i] * (416 / 1920) + 91) for i in range(len(y))]
-            g = [item for sublist in zip(_x, _y) for item in sublist]
-            g = g[:len(g)-2]
-            res.append(g)
+            flag = 2
+        elif rate_1 == 0:
+            if compare_with_edge(mv_roi):
+                r = r.union(mv_roi) 
+                flag = 2
+        elif rate_1 > T1 and rate_1 < T2:
+            r = r.union(mv_roi)
+            flag = 1
+    if flag != 0:
+        res = []
+        if r.geom_type == 'MultiPolygon':
+            polysize = len(r.geoms)
+            for i in range(polysize):
+                ploy = r.geoms[i]
+                x, y = ploy.exterior.coords.xy
+                _x = [int(x[i] * (416 / 1920)) for i in range(len(x))]
+                _y = [int(y[i] * (416 / 1920) + 91) for i in range(len(y))]
+                g = [item for sublist in zip(_x, _y) for item in sublist]
+                g = g[:len(g)-2]
+                res.append(g)
+        else:
+            if r.area != 0:
+                x, y = r.exterior.coords.xy
+                _x = [int(x[i] * (416 / 1920)) for i in range(len(x))]
+                _y = [int(y[i] * (416 / 1920) + 91) for i in range(len(y))]
+                g = [item for sublist in zip(_x, _y) for item in sublist]
+                g = g[:len(g)-2]
+                res.append(g)
+        return flag, res
     else:
-        if r.area != 0:
-            x, y = r.exterior.coords.xy
-            _x = [int(x[i] * (416 / 1920)) for i in range(len(x))]
-            _y = [int(y[i] * (416 / 1920) + 91) for i in range(len(y))]
-            g = [item for sublist in zip(_x, _y) for item in sublist]
-            g = g[:len(g)-2]
-            res.append(g)
-    return res
+        return 0, None
 
 def format_result(detections):
     dec = []
@@ -463,6 +473,7 @@ if __name__ == "__main__":
     start_point = opt.start_p    #[0, distance - 1]
     idx_sam = opt.sample_index
     img_shape = (1080, 1920)
+    flag = 2
     os.makedirs('res_for_s{}_e{}_dist{}_{}'.format(idx_sam, extend, distance, start_point), exist_ok=True)
     timefile = open('res_for_s{}_e{}_dist{}_{}/_time'.format(idx_sam, extend, distance, start_point), 'w')
     if os.path.exists('res_for_s{}_e{}_dist{}_{}/RoI'.format(idx_sam, extend, distance, start_point)):
@@ -473,12 +484,15 @@ if __name__ == "__main__":
         if batch_i >= start_point:
             resfile = open('res_for_s{}_e{}_dist{}_{}/res{}.txt'.format(idx_sam, extend, distance, start_point, batch_i + 1), 'w')
             # s: idx for samples file, e: expension (1: no expension), dist, start_point 
-            if (batch_i - start_point) % distance == 0:
+            #if (batch_i - start_point) % distance == 0:
                 # perform inference, get layers
-                prev_time = time.time()
+            if flag == 2:
+                flag = 0
                 Layers = []
                 total_dicts = []
                 total_RoIs = []
+                # full inference here!
+                prev_time = time.time()
                 with torch.no_grad():
                     detections, layers = model(input_imgs, weights_dict, bias_dict)
                     detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
@@ -486,72 +500,95 @@ if __name__ == "__main__":
                 inference_time = datetime.timedelta(seconds=current_time - prev_time)
                 text = "full inference, time = " + str(inference_time) + "\n"
                 timefile.write(text)
-                print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
+                #print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
                 # process detection results:
                 bboxes = []
                 res = format_result(detections)
-                print(res)
+                #print('full res:\n', res)
+                np.savetxt(resfile, res, fmt='%.3f')
+                resfile.close()
                 if len(res) > 0:
                     bboxes = np.zeros(4 * len(res)).reshape(-1, 4)
                     bboxes[:, :] = res[:, 2 : 6]
+                
                 prev_time = time.time()
                 for i in range(len(layers_idx)):
                     idx = layers_idx[i]
                     Layers.append(layers[idx])
-                for j in range(1, distance):
-                    Region_of_interests = get_RoI(bboxes, batch_i + j + idx_for_mv)
+                frame_idx = 0
+                while (True):
+                    frame_idx += 1
+                    flag, Region_of_interests = get_RoI(bboxes, batch_i + frame_idx + idx_for_mv)
+                    if flag == 2:
+                        idx_for_partial = 0
+                        if frame_idx > 1:
+                            flag = 0
+                        #print('frame_idx is:', frame_idx)
+                        break
                     # if expand?
-                    if extend != 1:
-                        Region_of_interests = RoI_extension(Region_of_interests, (1 - 1. / extend))
-                    temp_his, temp_RoI = _store(Layers, Region_of_interests)
-                    total_dicts.append(temp_his)
-                    total_RoIs.append(temp_RoI)               # dictionary for the following n frames
+                    elif flag == 1:
+                        if extend != 1:
+                            Region_of_interests = RoI_extension(Region_of_interests, (1 - 1. / extend))
+                        temp_his, temp_RoI = _store(Layers, Region_of_interests)
+                        total_dicts.append(temp_his)
+                        total_RoIs.append(temp_RoI)               # dictionary for the following n frames
+                    else:
+                        total_dicts.append(None)
+                        total_RoIs.append(None)
                 current_time = time.time()
-                idx_for_partial = 0
+                
                 exe_time = datetime.timedelta(seconds=current_time - prev_time)
                 text = "store hist info. for*" + str(distance - 1) + "*frames, time = " + str(exe_time) + "\n"
                 timefile.write(text)
 
             else:
-                # do inf for batch_i, hisinfo is in total_dicts[idx_for_partial]
-                prev_time = time.time()
-                RoIs = total_RoIs[idx_for_partial]
-                if batch_i == 7:
-                    print('RoIs:', RoIs)
-                RoIfile.write("RoI for frame " + str(batch_i + 1) + "\n")
-                for layer_i in range(38):
-                    RoI = RoIs[layer_i]
-                    RoIfile.write("***************\n")
-                    if RoI is not None:
-                        for temp in RoI:
-                            RoIfile.write(json.dumps(temp))
-                            RoIfile.write("\n")
+            # do inf for batch_i, hisinfo is in total_dicts[idx_for_partial]
+                if idx_for_partial < frame_idx - 1:
+                    RoIs = total_RoIs[idx_for_partial]
+                    print('batch %i, RoIs: ' % (batch_i), RoIs)
+                    RoIfile.write("RoI for frame " + str(batch_i + 1) + "\n")
+                    if RoIs is not None:
+                        for layer_i in range(38):
+                            RoI = RoIs[layer_i]
+                            RoIfile.write("***************\n")
+                            if RoI is not None:
+                                for temp in RoI:
+                                    RoIfile.write(json.dumps(temp))
+                                    RoIfile.write("\n")
+                            else:
+                                RoIfile.write("None\n")
+                        prev_time = time.time()
+                        for j in range(len(layer_index)):
+                            temp = total_dicts[idx_for_partial][j]
+                            locals()['_layer' + str(layer_index[j])] = temp
+                            locals()['_RoI_' + str(layer_index[j])] = RoIs[j]
+                        current_time = time.time()
+                        exe_time = datetime.timedelta(seconds=current_time - prev_time)
+                        text = "load hist info. for frame" + str(batch_i + 1) + ", time = " + str(exe_time) + "\n"
+                        timefile.write(text)
+
+                        with torch.no_grad():
+                            prev_time = time.time()
+                            detections = model_2(input_imgs, weights_dict_2, bias_dict_2, _layer1, _layer2, _layer3, _layer4, _layer5, _layer6, _layer7, _layer8, _layer9, _layer10, _layer11, _layer12, _layer13, _layer14, _layer15, _layer16, _layer17, _layer18, _layer19, _layer20, _layer21, _layer22, _layer23, _layer24, _layer25, _layer26, _layer27, _layer28, _layer29, _layer30, _layer32, _layer34, _layer37, _layer39, _layer41, _layer44, _layer46, _layer48, _RoI_1, _RoI_2, _RoI_3, _RoI_4, _RoI_5, _RoI_6, _RoI_7, _RoI_8, _RoI_9, _RoI_10, _RoI_11, _RoI_12, _RoI_13, _RoI_14, _RoI_15, _RoI_16, _RoI_17, _RoI_18, _RoI_19, _RoI_20, _RoI_21, _RoI_22, _RoI_23, _RoI_24, _RoI_25, _RoI_26, _RoI_27, _RoI_28, _RoI_29, _RoI_30, _RoI_32, _RoI_34, _RoI_37, _RoI_39, _RoI_41, _RoI_44, _RoI_46, _RoI_48)
+                            print(detections)
+                            detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres) 
+                            current_time = time.time()
+                            inference_time = datetime.timedelta(seconds=current_time - prev_time)
+                            print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
+                            text = "partial inference, time = " + str(inference_time) + "\n"
+                            timefile.write(text)
+                            partial_res = format_result(detections)
+                            print('partial res:\n', partial_res)
+                            np.savetxt(resfile, partial_res, fmt='%.3f')
+
                     else:
                         RoIfile.write("None\n")
-                for j in range(len(layer_index)):
-                    temp = total_dicts[idx_for_partial][j]
-                    locals()['_layer' + str(layer_index[j])] = temp
-                    locals()['_RoI_' + str(layer_index[j])] = RoIs[j]
-                current_time = time.time()
-                exe_time = datetime.timedelta(seconds=current_time - prev_time)
-                text = "load hist info. for frame" + str(batch_i + 1) + ", time = " + str(exe_time) + "\n"
-                timefile.write(text)
-
-                with torch.no_grad():
-                    prev_time = time.time()
-                    detections = model_2(input_imgs, weights_dict_2, bias_dict_2, _layer1, _layer2, _layer3, _layer4, _layer5, _layer6, _layer7, _layer8, _layer9, _layer10, _layer11, _layer12, _layer13, _layer14, _layer15, _layer16, _layer17, _layer18, _layer19, _layer20, _layer21, _layer22, _layer23, _layer24, _layer25, _layer26, _layer27, _layer28, _layer29, _layer30, _layer32, _layer34, _layer37, _layer39, _layer41, _layer44, _layer46, _layer48, _RoI_1, _RoI_2, _RoI_3, _RoI_4, _RoI_5, _RoI_6, _RoI_7, _RoI_8, _RoI_9, _RoI_10, _RoI_11, _RoI_12, _RoI_13, _RoI_14, _RoI_15, _RoI_16, _RoI_17, _RoI_18, _RoI_19, _RoI_20, _RoI_21, _RoI_22, _RoI_23, _RoI_24, _RoI_25, _RoI_26, _RoI_27, _RoI_28, _RoI_29, _RoI_30, _RoI_32, _RoI_34, _RoI_37, _RoI_39, _RoI_41, _RoI_44, _RoI_46, _RoI_48)
-                    print('detections:', detections)
-                    detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres) 
-                    current_time = time.time()
-                    inference_time = datetime.timedelta(seconds=current_time - prev_time)
-                    print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
-                    text = "partial inference, time = " + str(inference_time) + "\n"
-                    timefile.write(text)
-                    res = format_result(detections)
-                    print(res)
-                idx_for_partial += 1
-            np.savetxt(resfile, res, fmt='%.3f')
-            resfile.close()
+                        np.savetxt(resfile, res, fmt='%.3f')
+                        resfile.close()
+                        #print('reused res:\n', res)
+                    idx_for_partial += 1
+                    if idx_for_partial == frame_idx - 1:
+                        flag = 2
     RoIfile.close()
     timefile.close()
 

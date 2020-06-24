@@ -306,11 +306,18 @@ class Darknet(nn.Module):
                 #p_t = time.time()
                 x = module[0](x, w, b)
                 #c_t = time.time()
-                #print('conv time: %s' % (c_t - p_t))
+                #print('full, layer: %d, conv time: %s' % (i, c_t - p_t))
                 if bn:
+                    #p_t = time.time()
                     x = module[1](x)
+                    #c_t = time.time()
+                    #print('full, layer: %d, bn time: %s' % (i, c_t - p_t))
+
                 if module_def["activation"] == "leaky":
+                    #p_t = time.time()
                     x = module[2](x)
+                    #c_t = time.time()
+                    #print('full, layer: %d, leaky time: %s' % (i, c_t - p_t))
             elif module_def["type"] == "route":
                 x = torch.cat([layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)
             elif module_def["type"] == "shortcut":

@@ -365,25 +365,40 @@ class Darknet_2(nn.Module):
                     RoI = None
                 else:
                     RoI = locals()['RoI_' + str(_idx)]
+                #p_t = time.time()
                 x = module[0](x, w, b, RoI)
+                #c_t = time.time()
+                #print('partial, layer %d, conv time: %s' % (i, c_t - p_t))
                 if bn:
+                    #p_t = time.time()
                     x = module[1](x)
+                    #c_t = time.time()
+                    #print('partial, layer %d, bn time: %s' % (i, c_t - p_t))
                 if module_def["activation"] == "leaky":
+                    #p_t = time.time()
                     x = module[2](x)
+                    #c_t = time.time()
+                    #print('partial, layer %d, leaky time: %s' % (i, c_t - p_t))
             elif module_def["type"] == "route":
                 x = torch.cat([layer_outputs[int(layer_i)] for layer_i in module_def["layers"].split(",")], 1)
             elif module_def["type"] == "shortcut":
                 layer_i = int(module_def["from"])
                 x = layer_outputs[-1] + layer_outputs[layer_i]
             elif module_def["type"] == "yolo":
+                #p_t = time.time()
                 x, layer_loss = module[0](x, targets, img_dim)
                 loss += layer_loss
                 yolo_outputs.append(x)
+                #c_t = time.time()
+                #print('partial, layer %d, yolo time: %s' % (i, c_t - p_t))
             elif module_def["type"] == "padding":
+                #p_t = time.time()
                 _his_index = int(module_def["his_idx"])
                 temp = locals()['input_n' + str(_his_index)]
                 RoI = locals()['RoI_' + str(_his_index)]
                 x = module[0](x, RoI, temp)
+                #c_t = time.time()
+                #print('partial, layer %d, padding time: %s' % (i, c_t - p_t))
             layer_outputs.append(x)
         yolo_outputs = to_cpu(torch.cat(yolo_outputs, 1))
         return yolo_outputs if targets is None else (loss, yolo_outputs)
