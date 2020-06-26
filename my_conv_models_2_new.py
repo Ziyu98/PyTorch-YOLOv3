@@ -20,49 +20,36 @@ import matplotlib.patches as patches
 
 os.environ['MKL_NUM_THREADS'] = '1'
 
-def my_conv(X, W, b, RoIs, layersize, stride=1, padding=1):
+def my_conv(X, W, b, RoIs, n_RoIs, layersize, stride=1, padding=1):
     # layersize and RoIs should be the layersize and RoIs of next layer
-    #p_t = time.time()
     n_filters, d_filters, h_filters, w_filters = W.shape
     n_x, d_x, h_x, w_x = X.shape
-    h_out = (h_x - h_filters + 2 * padding) // stride + 1
-    w_out = (w_x - w_filters + 2 * padding) // stride + 1
-    #print('X shape:', X.shape, 'W shape:', W.shape)
-    #print(h_out, w_out)
-    #if not h_out.is_integer() or not w_out.is_integer():
-        #raise Exception('Invalid output dimension!')
-    
-    X_col = im2col(X, h_filters, w_filters, stride=stride, pad=padding)
-    W_col = W.reshape(n_filters, -1).T
-    #c_t = time.time()
-    #print('t_1: %s' % (c_t - p_t))
-    #p_t = time.time()
-    if RoIs is not None:
-        res = np.zeros((W_col.shape[1], X_col.shape[0])).astype('float32')
-        img = Image.new('L', (layersize, layersize), 0)
-        for poly in RoIs:
-            ImageDraw.Draw(img).polygon(poly, outline=1, fill=1)
-        img = np.array(img)
-        idx = np.transpose(np.nonzero(img))
-        _list = []
-        for [x, y] in idx:
-            temp = x * layersize + y
-            _list.append(temp)
-        X_col = X_col[_list, :]
-        #c_t = time.time()
-        #print('process X_col time: %s' % (c_t - p_t))
-        #p_t = time.time()
-        out = np.dot(X_col, W_col).T
-        #c_t = time.time()
-        #print('partial t_3: %s' % (c_t - p_t))
-        res[:, _list] = out
+    if RoIs is not None and n_RoIs is not None:
+        W_col = W.reshape(n_filters, -1).T
+        res = np.zeros((n_filters, layersize, layersize, n_x)).astype('float32')
+        for RoI, n_RoI in zip(RoIs, n_RoIs):
+            #print('RoI and n_RoI:', RoI, n_RoI)
+            [xmin, ymin, xmax, ymax] = RoI            # one box
+            [n_xmin, n_ymin, n_xmax, n_ymax] = n_RoI
+            if stride != 1:
+                xmin = xmin if xmin % stride != 0 else xmin + 1
+                ymin = ymin if ymin % stride != 0 else ymin + 1
+            X_temp = X[:, :, ymin:ymax+1, xmin:xmax+1]
+            n_x, dx, h_temp, w_temp = X_temp.shape
+            h_out = (h_temp - h_filters) // stride + 1
+            w_out = (w_temp - w_filters) // stride + 1
+            X_temp_col = im2col(X_temp, h_filters, w_filters, stride=stride, pad=0)
+            X_res = np.dot(X_temp_col, W_col).T.reshape(n_filters, h_out, w_out, n_x)
+            res[:, n_ymin:n_ymax+1, n_xmin:n_xmax+1, :] = X_res
     else:
+        h_out = (h_x - h_filters + 2 * padding) // stride + 1
+        w_out = (w_x - w_filters + 2 * padding) // stride + 1    
+        X_col = im2col(X, h_filters, w_filters, stride=stride, pad=padding)
+        W_col = W.reshape(n_filters, -1).T
         res = np.dot(X_col, W_col).T
-        #c_t = time.time()
-        #print('full t_3: %s' % (c_t - p_t))
-    b = b.reshape(-1, 1)
+        res = res.reshape(n_filters, h_out, w_out, n_x)
+    b = b.reshape(-1, 1, 1, 1)
     res += b
-    res = res.reshape(n_filters, h_out, w_out, n_x)
     res = res.transpose(3, 0, 1, 2)
     return res
 
@@ -173,13 +160,13 @@ class MyConvLayer(nn.Module):
         self.padding = padding
         self.next_size = next_size
     
-    def forward(self, input_x, input_w, input_b, next_RoI):
+    def forward(self, input_x, input_w, input_b, curr_RoI, next_RoI):
         s = self.stride
         p = self.padding
         n_s = self.next_size
         # input_x and input_w to numpy
         input_x, input_w, input_b = input_x.numpy(), input_w.numpy(), input_b.numpy()
-        out = my_conv(input_x, input_w, input_b, next_RoI, n_s, s, p)
+        out = my_conv(input_x, input_w, input_b, curr_RoI, next_RoI, n_s, s, p)
         # out to tensor
         out = torch.from_numpy(out) 
         return out
@@ -195,19 +182,15 @@ class PADLayer(nn.Module):
             width = self.layersize
             height = self.layersize
             shape_3 = input_x.shape[1]
-            RoI = []
-            img = Image.new('L', (width, height), 0)
-            for poly in RoIs:
-                ImageDraw.Draw(img).polygon(poly, outline=1, fill=1)
-            img = np.array(img)
-            _img = np.repeat(img[np.newaxis, :, :], shape_3, axis=0)
-            _img = _img[np.newaxis, :, :, :]
-            mask = torch.tensor(_img)
-            input_x = torch.mul(input_x, mask)
-            for key in his_info:
-                [x, y] = key
-                value = his_info[key]
-                input_x[0, :, x, y] = value
+            Rs = RoIs[0]
+            R_ps = RoIs[1]
+            for R, R_p, his in zip(Rs, R_ps, his_info):
+                [xmin, ymin, xmax, ymax] = R
+                [xmin_2, ymin_2, xmax_2, ymax_2] = R_p
+                input_x[0, :, ymin_2:ymin, xmin:xmax+1] = torch.tensor(his[0])
+                input_x[0, :, ymax+1:ymax_2+1, xmin:xmax+1] = torch.tensor(his[1])
+                input_x[ymin_2:ymax_2+1, xmin_2:xmin] = torch.tensor(his[2])
+                input_x[ymin_2:ymax_2+1, xmax+1:xmax_2+1] = torch.tensor(his[3])
         return input_x
 
 class YOLOLayer_2(nn.Module):
@@ -350,7 +333,7 @@ class Darknet_2(nn.Module):
         self.seen = 0
         self.header_info = np.array([0, 0, 0, self.seen, 0], dtype=np.int32)
 
-    def forward(self, x, weights_dict, bias_dict, input_n1, input_n2, input_n3, input_n4, input_n5, input_n6, input_n7, input_n8, input_n9, input_n10, input_n11, input_n12, input_n13, input_n14, input_n15, input_n16, input_n17, input_n18, input_n19, input_n20, input_n21, input_n22, input_n23, input_n24, input_n25, input_n26, input_n27, input_n28, input_n29, input_n30, input_n32, input_n34, input_n37, input_n39, input_n41, input_n44, input_n46, input_n48, RoI_1, RoI_2, RoI_3, RoI_4, RoI_5, RoI_6, RoI_7, RoI_8, RoI_9, RoI_10, RoI_11, RoI_12, RoI_13, RoI_14, RoI_15, RoI_16, RoI_17, RoI_18, RoI_19, RoI_20, RoI_21, RoI_22, RoI_23, RoI_24, RoI_25, RoI_26, RoI_27, RoI_28, RoI_29, RoI_30, RoI_32, RoI_34, RoI_37, RoI_39, RoI_41, RoI_44, RoI_46, RoI_48, targets=None):
+    def forward(self, x, weights_dict, bias_dict, input_n1, input_n2, input_n3, input_n4, input_n5, input_n6, input_n7, input_n8, input_n9, input_n10, input_n11, input_n12, input_n13, input_n14, input_n15, input_n16, input_n17, input_n18, input_n19, input_n20, input_n21, input_n22, input_n23, input_n24, input_n25, input_n26, input_n27, input_n28, input_n29, input_n30, input_n32, input_n34, input_n37, input_n39, input_n41, input_n44, input_n46, input_n48, RoI_0, RoI_1, RoI_2, RoI_3, RoI_4, RoI_5, RoI_6, RoI_7, RoI_8, RoI_9, RoI_10, RoI_11, RoI_12, RoI_13, RoI_14, RoI_15, RoI_16, RoI_17, RoI_18, RoI_19, RoI_20, RoI_21, RoI_22, RoI_23, RoI_24, RoI_25, RoI_26, RoI_27, RoI_28, RoI_29, RoI_30, RoI_32, RoI_34, RoI_37, RoI_39, RoI_41, RoI_44, RoI_46, RoI_48, targets=None):
         img_dim = x.shape[2]
         loss = 0
         layer_outputs, yolo_outputs = [], []
@@ -364,13 +347,18 @@ class Darknet_2(nn.Module):
                     b = bias_dict[i]
                 else:
                     b = torch.zeros(w.shape[0])
-                _idx = int(module_def["next_RoI"])
-                if _idx == 0:
+                _idx1 = int(module_def["curr_RoI"])
+                _idx2 = int(module_def["next_RoI"])
+                if _idx1 < 0 or _idx2 < 0:
                     RoI = None
                 else:
-                    RoI = locals()['RoI_' + str(_idx)]
+                    RoI = locals()['RoI_' + str(_idx1)][1]    # padded
+                    if _idx1 == _idx2:
+                        n_RoI = RoI
+                    else:
+                        n_RoI = locals()['RoI_' + str(_idx2)][0]   # next raw roi
                 #p_t = time.time()
-                x = module[0](x, w, b, RoI)
+                x = module[0](x, w, b, RoI, n_RoI)
                 #c_t = time.time()
                 #print('partial, layer %d, conv time: %s' % (i, c_t - p_t))
                 if bn:
@@ -400,7 +388,8 @@ class Darknet_2(nn.Module):
                 _his_index = int(module_def["his_idx"])
                 temp = locals()['input_n' + str(_his_index)]
                 RoI = locals()['RoI_' + str(_his_index)]
-                x = module[0](x, RoI, temp)
+                if RoI[0] != None and RoI[1] != None:
+                    x = module[0](x, RoI, temp)
                 #c_t = time.time()
                 #print('partial, layer %d, padding time: %s' % (i, c_t - p_t))
             layer_outputs.append(x)

@@ -48,7 +48,7 @@ def shrink(bboxes, offset):
         shrinked_bbox = pco.Execute(offset)
         if len(shrinked_bbox) > 0:
             shrinked_bbox = np.array(shrinked_bbox)[0]
-            shrinked_bbox = np.array(shrinked_bbox)
+            shrinked_bbox = np.asarray(shrinked_bbox)
             shrinked_bbox = shrinked_bbox.ravel().tolist()
             shrinked_bboxes.append(shrinked_bbox)
     return shrinked_bboxes
@@ -167,7 +167,8 @@ def RoI_for_layers(RoI):
             new_gt_boxes = padding_RoI(new_gt_boxes)
             g = new_gt_boxes[0]
             if len(g) == 8:
-                temp_list = g
+                [x1, y1, x2, y2, x3, y3, x4, y4] = g
+                temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
                 temp_list.sort()
                 w = layersize[i] - 1
                 if temp_list == [0, 0, 0, 0, w, w, w, w]:
@@ -184,7 +185,8 @@ def RoI_for_layers(RoI):
                     new_gt_boxes = padding_RoI(new_gt_boxes)
                     g = new_gt_boxes[0]
                     if len(g) == 8:
-                        temp_list = g
+                        [x1, y1, x2, y2, x3, y3, x4, y4] = g
+                        temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
                         temp_list.sort()
                         w = layersize[i] - 1
                         if temp_list == [0, 0, 0, 0, w, w, w, w]:
@@ -201,7 +203,8 @@ def RoI_for_layers(RoI):
                     new_gt_boxes = padding_RoI(new_gt_boxes)
                     g = new_gt_boxes[0]
                     if len(g) == 8:
-                        temp_list = g
+                        [x1, y1, x2, y2, x3, y3, x4, y4] = g
+                        temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
                         temp_list.sort()
                         w = layersize[i] - 1
                         if temp_list == [0, 0, 0, 0, w, w, w, w]:
@@ -227,9 +230,10 @@ def _store(Layers, RoI):
         RoI_padded = RoIs_padded[i]
         temp_list = []
         idx = []
-        if RoI is not None and len(RoI) > 0:
+        if RoI is not None:
             if len(RoI[0]) == 8:
-                temp_list = RoI[0]
+                [x1, y1, x2, y2, x3, y3, x4, y4] = RoI[0]
+                temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
                 temp_list.sort()
             if temp_list == [0, 0, 0, 0, width, width, height, height]:
             #
@@ -317,7 +321,9 @@ def compare_with_edge(roi):
 
 
 def get_RoI(prev_boxes, frame_id):
-    mvs = np.loadtxt('/i3c/hpcl/zjy5087/git/YOLOv3_TensorFlow/mb/mv{}.txt'.format(frame_id))
+    mvs = np.loadtxt('/i3c/hpcl/zjy5087/YOLO/mb/mb/mv{}.txt'.format(frame_id))
+    if len(mvs) == 0:
+        return 2, None
     r = sg.box(0, 0, 0, 0)
     if len(prev_boxes) > 0:
         for box in prev_boxes:
@@ -341,7 +347,7 @@ def get_RoI(prev_boxes, frame_id):
     T1 = 0.4
     T2 = 0.7
     T3 = 0.8
-    flag = 0   # 0: do nothing, 1: partial, 2: full
+    flag = 0
     if mv_roi.geom_type == 'MultiPolygon':
         num = len(mv_roi.geoms)
         for j in range(num):
@@ -349,24 +355,28 @@ def get_RoI(prev_boxes, frame_id):
             if roi.area > 1000:
                 rate_1, rate_2 = method_1(roi, prev_boxes)
                 if(rate_1 < T1 and rate_1 > 0) or rate_2 > T3:
-                    r = r.union(roi)
-                    flag = 2
+                    return 2, None
+                    #r = r.union(roi)
+                    #flag = 2
                 elif rate_1 == 0:
                     if compare_with_edge(roi):
-                        r = r.union(roi)
-                        flag = 2
+                        #r = r.union(roi)
+                        #flag = 2
+                        return 2, None
                 elif rate_1 > T1 and rate_1 < T2:
                     r = r.union(roi)             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                     flag = 1
     elif mv_roi.area > 1000:
         rate_1, rate_2 = method_1(mv_roi, prev_boxes)
         if (rate_1 < T1 and rate_1 > 0) or (rate_2 > T3):
-            r = r.union(mv_roi)
-            flag = 2
+            #r = r.union(mv_roi)
+            #flag = 2
+            return 2, None
         elif rate_1 == 0:
             if compare_with_edge(mv_roi):
-                r = r.union(mv_roi) 
-                flag = 2
+                #r = r.union(mv_roi) 
+                #flag = 2
+                return 2, None
         elif rate_1 > T1 and rate_1 < T2:
             r = r.union(mv_roi)
             flag = 1
@@ -411,6 +421,11 @@ def format_result(detections):
         res[:, 1] = dec[:, 5]
         res[:, 2:6] = dec[:, 0:4]
     return res
+def get_image_id(path):
+    items = path.split('/')
+    image_name = items[-1]
+    image_name = image_name[5 : -5]
+    return int(image_name)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -427,12 +442,12 @@ if __name__ == "__main__":
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
-    parser.add_argument("--reuse_d", type=int, default=2, help="reuse distance")
-    parser.add_argument("--start_p", type=int, default=0, help="start point")
+    #parser.add_argument("--reuse_d", type=int, default=2, help="reuse distance")
+    #parser.add_argument("--start_p", type=int, default=0, help="start point")
     opt = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch.set_num_threads(1)
+    #torch.set_num_threads(1)
 
     # Set up model
     model = Darknet(opt.model_def, img_size=opt.img_size).to(device)
@@ -458,137 +473,149 @@ if __name__ == "__main__":
 
     model_2.eval()  # Set in evaluation mode
 
-    dataloader = DataLoader(
-        ImageFolder(opt.image_folder, img_size=opt.img_size),
-        batch_size=opt.batch_size,
-        shuffle=False,
-        num_workers=opt.n_cpu,
-    )
+    image_sets = ImageFolder(opt.image_folder, img_size=opt.img_size)
 
     classes = load_classes(opt.class_path)  # Extracts class labels from file
 
     Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
     
-    distance = opt.reuse_d
-    start_point = opt.start_p    #[0, distance - 1]
+    #distance = opt.reuse_d
+    #start_point = opt.start_p    #[0, distance - 1]
     idx_sam = opt.sample_index
     img_shape = (1080, 1920)
-    flag = 2
-    os.makedirs('res_for_s{}_e{}_dist{}_{}'.format(idx_sam, extend, distance, start_point), exist_ok=True)
-    timefile = open('res_for_s{}_e{}_dist{}_{}/_time'.format(idx_sam, extend, distance, start_point), 'w')
-    if os.path.exists('res_for_s{}_e{}_dist{}_{}/RoI'.format(idx_sam, extend, distance, start_point)):
-        os.remove('res_for_s{}_e{}_dist{}_{}/RoI'.format(idx_sam, extend, distance, start_point))
-    RoIfile = open('res_for_s{}_e{}_dist{}_{}/RoI'.format(idx_sam, extend, distance, start_point), 'a')
-    for batch_i, (img_paths, input_imgs) in enumerate(dataloader):
+    os.makedirs('res_for_s{}_e{}'.format(idx_sam, extend), exist_ok=True)
+    timefile = open('dynres_for_s{}_e{}/_time'.format(idx_sam, extend), 'w')
+    if os.path.exists('dynres_for_s{}_e{}/RoI'.format(idx_sam, extend)):
+        os.remove('dynres_for_s{}_e{}/RoI'.format(idx_sam, extend))
+    RoIfile = open('dynres_for_s{}_e{}/RoI'.format(idx_sam, extend), 'a')
+    full_flag = True
+    for batch_i in range(len(image_sets)):
+        (img_paths, input_imgs) = image_sets[batch_i]
+        input_imgs = input_imgs.unsqueeze(0)
         input_imgs = Variable(input_imgs.type(Tensor))
-        if batch_i >= start_point:
-            resfile = open('res_for_s{}_e{}_dist{}_{}/res{}.txt'.format(idx_sam, extend, distance, start_point, batch_i + 1), 'w')
-            # s: idx for samples file, e: expension (1: no expension), dist, start_point 
-            #if (batch_i - start_point) % distance == 0:
-                # perform inference, get layers
-            if flag == 2:
-                flag = 0
-                Layers = []
-                total_dicts = []
-                total_RoIs = []
-                # full inference here!
-                prev_time = time.time()
-                with torch.no_grad():
+
+        #if batch_i >= start_point:
+        resfile = open('dynres_for_s{}_e{}/res{}.txt'.format(idx_sam, extend, batch_i + 1), 'w')
+        # s: idx for samples file, e: expension (1: no expension), dist, start_point 
+        if full_flag:
+            # perform full inference, get layers
+            Layers = []
+            total_dicts = []
+            total_RoIs = []
+            with torch.no_grad():
+                try:
+                    prev_time = time.time()
                     detections, layers = model(input_imgs, weights_dict, bias_dict)
+                    current_time = time.time()
                     detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
-                current_time = time.time()
-                inference_time = datetime.timedelta(seconds=current_time - prev_time)
-                text = "full inference, time = " + str(inference_time) + "\n"
-                timefile.write(text)
-                #print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
-                # process detection results:
-                bboxes = []
-                res = format_result(detections)
-                #print('full res:\n', res)
-                np.savetxt(resfile, res, fmt='%.3f')
-                resfile.close()
-                if len(res) > 0:
-                    bboxes = np.zeros(4 * len(res)).reshape(-1, 4)
-                    bboxes[:, :] = res[:, 2 : 6]
-                
-                prev_time = time.time()
-                for i in range(len(layers_idx)):
-                    idx = layers_idx[i]
-                    Layers.append(layers[idx])
-                frame_idx = 0
-                while (True):
-                    frame_idx += 1
-                    flag, Region_of_interests = get_RoI(bboxes, batch_i + frame_idx + idx_for_mv)
-                    if flag == 2:
-                        idx_for_partial = 0
-                        if frame_idx > 1:
-                            flag = 0
-                        #print('frame_idx is:', frame_idx)
-                        break
-                    # if expand?
-                    elif flag == 1:
+                except:
+                    continue
+            inference_time = datetime.timedelta(seconds=current_time - prev_time)
+            text = "full inference, time = " + str(inference_time) + "\n"
+            timefile.write(text)
+            print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
+            # process detection results:
+            bboxes = []
+            res = format_result(detections)
+            print('full inf, res:\n', res)
+            np.savetxt(resfile, res, fmt='%.3f')
+            resfile.close()
+            if len(res) > 0:
+                bboxes = np.zeros(4 * len(res)).reshape(-1, 4)
+                bboxes[:, :] = res[:, 2 : 6]
+            prev_time = time.time()
+            for i in range(len(layers_idx)):
+                idx = layers_idx[i]
+                Layers.append(layers[idx])
+            #for j in range(1, distance):
+            j = 0
+            while(True):
+                j += 1
+                try:
+                    flag, Region_of_interests = get_RoI(bboxes, batch_i + j + idx_for_mv)
+                except:
+                    continue
+                # if expand?
+                if flag == 1:    #partial
+                    try:
                         if extend != 1:
                             Region_of_interests = RoI_extension(Region_of_interests, (1 - 1. / extend))
                         temp_his, temp_RoI = _store(Layers, Region_of_interests)
                         total_dicts.append(temp_his)
                         total_RoIs.append(temp_RoI)               # dictionary for the following n frames
-                    else:
-                        total_dicts.append(None)
-                        total_RoIs.append(None)
-                current_time = time.time()
-                
-                exe_time = datetime.timedelta(seconds=current_time - prev_time)
-                text = "store hist info. for*" + str(distance - 1) + "*frames, time = " + str(exe_time) + "\n"
-                timefile.write(text)
+                        full_flag = False
+                    except:
+                        next_frames_cnt = j - 1
+                        break
+                elif flag == 0:
+                    # do nothing
+                    total_dicts.append(None)
+                    total_RoIs.append(None)
+                    full_flag = False
+                else:
+                    # need full inf for this frame
+                    next_frames_cnt = j - 1
+                    break
 
-            else:
+            current_time = time.time()
+            idx_for_partial = 0
+            exe_time = datetime.timedelta(seconds=current_time - prev_time)
+            text = "store hist info. for*" + str(next_frames_cnt) + "*frames, time = " + str(exe_time) + "\n"
+            timefile.write(text)
+
+        else:
             # do inf for batch_i, hisinfo is in total_dicts[idx_for_partial]
-                if idx_for_partial < frame_idx - 1:
-                    RoIs = total_RoIs[idx_for_partial]
-                    print('batch %i, RoIs: ' % (batch_i), RoIs)
-                    RoIfile.write("RoI for frame " + str(batch_i + 1) + "\n")
-                    if RoIs is not None:
-                        for layer_i in range(38):
-                            RoI = RoIs[layer_i]
-                            RoIfile.write("***************\n")
-                            if RoI is not None:
-                                for temp in RoI:
-                                    RoIfile.write(json.dumps(temp))
-                                    RoIfile.write("\n")
-                            else:
-                                RoIfile.write("None\n")
-                        prev_time = time.time()
-                        for j in range(len(layer_index)):
-                            temp = total_dicts[idx_for_partial][j]
-                            locals()['_layer' + str(layer_index[j])] = temp
-                            locals()['_RoI_' + str(layer_index[j])] = RoIs[j]
-                        current_time = time.time()
-                        exe_time = datetime.timedelta(seconds=current_time - prev_time)
-                        text = "load hist info. for frame" + str(batch_i + 1) + ", time = " + str(exe_time) + "\n"
-                        timefile.write(text)
+            if idx_for_partial < next_frames_cnt:
+                # idx_for_partial(and skips)
 
-                        with torch.no_grad():
+                RoIs = total_RoIs[idx_for_partial]
+                RoIfile.write("RoI for frame " + str(batch_i + 1) + "\n")
+                if RoIs is not None:
+                    for layer_i in range(38):
+                        RoI = RoIs[layer_i]
+                        RoIfile.write("***************\n")
+                        if RoI is not None:
+                            for temp in RoI:
+                                RoIfile.write(json.dumps(temp))
+                                RoIfile.write("\n")
+                        else:
+                            RoIfile.write("None\n")
+                    prev_time = time.time()
+                    for j in range(len(layer_index)):
+                        temp = total_dicts[idx_for_partial][j]
+                        locals()['_layer' + str(layer_index[j])] = temp
+                        locals()['_RoI_' + str(layer_index[j])] = RoIs[j]
+                    current_time = time.time()
+                    exe_time = datetime.timedelta(seconds=current_time - prev_time)
+                    text = "load hist info. for frame" + str(batch_i + 1) + ", time = " + str(exe_time) + "\n"
+                    timefile.write(text)
+
+                    with torch.no_grad():
+                        try:
                             prev_time = time.time()
                             detections = model_2(input_imgs, weights_dict_2, bias_dict_2, _layer1, _layer2, _layer3, _layer4, _layer5, _layer6, _layer7, _layer8, _layer9, _layer10, _layer11, _layer12, _layer13, _layer14, _layer15, _layer16, _layer17, _layer18, _layer19, _layer20, _layer21, _layer22, _layer23, _layer24, _layer25, _layer26, _layer27, _layer28, _layer29, _layer30, _layer32, _layer34, _layer37, _layer39, _layer41, _layer44, _layer46, _layer48, _RoI_1, _RoI_2, _RoI_3, _RoI_4, _RoI_5, _RoI_6, _RoI_7, _RoI_8, _RoI_9, _RoI_10, _RoI_11, _RoI_12, _RoI_13, _RoI_14, _RoI_15, _RoI_16, _RoI_17, _RoI_18, _RoI_19, _RoI_20, _RoI_21, _RoI_22, _RoI_23, _RoI_24, _RoI_25, _RoI_26, _RoI_27, _RoI_28, _RoI_29, _RoI_30, _RoI_32, _RoI_34, _RoI_37, _RoI_39, _RoI_41, _RoI_44, _RoI_46, _RoI_48)
-                            print(detections)
-                            detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres) 
                             current_time = time.time()
+                            detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres) 
                             inference_time = datetime.timedelta(seconds=current_time - prev_time)
-                            print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
-                            text = "partial inference, time = " + str(inference_time) + "\n"
-                            timefile.write(text)
-                            partial_res = format_result(detections)
-                            print('partial res:\n', partial_res)
-                            np.savetxt(resfile, partial_res, fmt='%.3f')
-
-                    else:
-                        RoIfile.write("None\n")
-                        np.savetxt(resfile, res, fmt='%.3f')
+                        except:
+                            continue
+                        print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
+                        text = "partial inference, time = " + str(inference_time) + "\n"
+                        timefile.write(text)
+                        partial_res = format_result(detections)
+                        print('partial inf, res:\n', partial_res)
+                        np.savetxt(resfile, partial_res, fmt='%.3f')
                         resfile.close()
-                        #print('reused res:\n', res)
+                        idx_for_partial += 1 # next frame
+                        if idx_for_partial == next_frames_cnt:
+                            full_flag = True
+                else:
+                    print('reuse, res:\n', res)
+                    np.savetxt(resfile, res, fmt='%.3f')
+                    resfile.close()
                     idx_for_partial += 1
-                    if idx_for_partial == frame_idx - 1:
-                        flag = 2
+                    if idx_for_partial == next_frames_cnt:
+                        full_flag = True
     RoIfile.close()
     timefile.close()
 

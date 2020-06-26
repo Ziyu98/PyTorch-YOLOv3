@@ -9,9 +9,14 @@ import time
 from utils.parse_config import *
 from utils.utils import build_targets, to_cpu, non_max_suppression
 from new_im2col import im2col
+import os
 
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
+
+os.environ['MKL_NUM_THREADS'] = '1'
+
+
 def my_conv(X, W, b, stride=1, padding=1):
     #p_t = time.time()
     n_filters, d_filters, h_filters, w_filters = W.shape
