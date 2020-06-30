@@ -14,7 +14,7 @@ import pyclipper
 import json
 import shapely.geometry as sg
 from PIL import Image, ImageDraw
-from math import ceil, floor
+from math import ceil, floor, sqrt
 
 import torch
 from torch.utils.data import DataLoader
@@ -44,33 +44,33 @@ layers_idx = [0, 1, 4, 5, 8, 11, 12, 15, 18, 21, 24, 27, 30, 33, 36, 37, 40,
 
 
 def RoI_extension(RoIs, rate):
-    def dist(a, b):
-        return np.sqrt(np.sum((a - b) ** 2))
-
-    def perimeter(bbox):
-        peri = 0.0
-        for i in range(bbox.shape[0]):
-            peri += dist(bbox[i], bbox[(i + 1) % bbox.shape[0]])
-        return peri
-    _RoIs = []
+    cnt = len(RoIs)
     for box in RoIs:
-        box_info = np.asarray(box).reshape((-1, 2))
-        _RoIs.append(box_info)
-    rate = rate * rate
-    new_RoIs = []
-    for box in _RoIs:
-        area = sg.Polygon(box).area
-        peri = perimeter(box)
-        offset = int(area * (1 - rate) / (peri + 0.0001) + 0.5)
-        pco = pyclipper.PyclipperOffset()
-        pco.AddPath(box, pyclipper.JT_MITER, pyclipper.ET_CLOSEDPOLYGON)
-        new_box = pco.Execute(offset)
-        if len(new_box) > 0:
-            new_box = np.asarray(new_box)[0]
-            new_box = np.asarray(new_box)
-            new_box = new_box.ravel().tolist()
-            new_RoIs.append(new_box)
-    return new_RoIs
+        w = box[2] - box[0]
+        h = box[3] - box[1]
+        dh = (sqrt(rate) - 1) * h / 2
+        dw = (sqrt(rate) - 1) * w / 2
+        box[:] = [max(int(box[0] - dw), 0), max(int(box[1] - dh), 0), min(int(box[2] + dw), 415), min(int(box[3] + dh), 415)]
+    if cnt > 1:
+        polygon = sg.box(RoIs[0][0], RoIs[0][1], RoIs[0][2], RoIs[0][3])
+        for box in RoIs[1:]:
+            polygon = polygon.union(sg.box(box[0], box[1], box[2], box[3]))
+        new_gt_boxes = []
+        if polygon.geom_type == 'MultiPolygon':
+            if len(polygon) != cnt:
+                for _poly in polygon:
+                    g = _poly.bounds
+                    _g = [ing(x) for x in g]
+                    new_gt_boxes.append(_g)
+            else:
+                return RoIs
+        else:
+            g = polygon.bounds
+            _g = [int(x) for x in g]
+            new_gt_boxes.append(_g)
+        return new_gt_boxes
+
+    return RoIs
 
 def RoI_for_layers(RoI):
     # input RoI is the region of interest for the raw frame
@@ -495,7 +495,7 @@ if __name__ == "__main__":
                     if True:
                         Region_of_interests = RoI_box(Region_of_interests)
                         if extend != 1:
-                            Region_of_interests = RoI_extension(Region_of_interests, (1 - 1. / extend))
+                            Region_of_interests = RoI_extension(Region_of_interests, (extend))
                         temp_his, temp_RoI, temp_RoI_p = _store(Layers, Region_of_interests)
                         total_dicts.append(temp_his)
                         total_RoIs.append(temp_RoI)               # dictionary for the following n frames
@@ -584,10 +584,3 @@ if __name__ == "__main__":
                         full_flag = True
     RoIfile.close()
     timefile.close()
-
-
-
-
-
-
-

@@ -4,7 +4,7 @@ from my_conv_models import *
 from my_conv_models_2_copy import *
 from utils.utils import *
 from utils.datasets import *
-
+from intergated_version import RoI_for_layers as RL 
 import os
 import sys
 import time
@@ -111,15 +111,10 @@ def RoI_for_layers(RoI):
                 if not polygon.is_valid:
                     polygon = polygon.buffer(0)
             else:
-                try:
-                    temp_poly = sg.Polygon(_list)
-                    if not temp_poly.is_valid:
-                        temp_poly = temp_poly.buffer(0)
-                    polygon = polygon.union(temp_poly)
-                except:
-                    print(_list)
-                    print(polygon)
-                    print(sg.Polygon(_list))
+                temp_poly = sg.Polygon(_list)
+                if not temp_poly.is_valid:
+                    temp_poly = temp_poly.buffer(0)
+                polygon = polygon.union(temp_poly)
         new_gt_boxes = []
         if polygon.geom_type == 'MultiPolygon':
             for _poly in polygon:
@@ -166,14 +161,15 @@ def RoI_for_layers(RoI):
             # update RoI input for next layer
             # RoI will be modified by the padding function
             new_gt_boxes = padding_RoI(new_gt_boxes)
-            g = new_gt_boxes[0]
-            if len(g) == 8:
-                [x1, y1, x2, y2, x3, y3, x4, y4] = g
-                temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
-                temp_list.sort()
-                w = layersize[i] - 1
-                if temp_list == [0, 0, 0, 0, w, w, w, w]:
-                    flag = 1
+            if len(new_gt_boxes) == 1:
+                g = new_gt_boxes[0]
+                if len(g) == 8:
+                    [x1, y1, x2, y2, x3, y3, x4, y4] = g
+                    temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
+                    temp_list.sort()
+                    w = layersize[i] - 1
+                    if temp_list == [0, 0, 0, 0, w, w, w, w]:
+                        flag = 1
             RoIs_padded.append(new_gt_boxes)
             RoI = new_gt_boxes
         else:
@@ -184,14 +180,15 @@ def RoI_for_layers(RoI):
                 if new_gt_boxes != None:
                     flag = 0
                     new_gt_boxes = padding_RoI(new_gt_boxes)
-                    g = new_gt_boxes[0]
-                    if len(g) == 8:
-                        [x1, y1, x2, y2, x3, y3, x4, y4] = g
-                        temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
-                        temp_list.sort()
-                        w = layersize[i] - 1
-                        if temp_list == [0, 0, 0, 0, w, w, w, w]:
-                            flag = 1
+                    if len(new_gt_boxes) == 0:
+                        g = new_gt_boxes[0]
+                        if len(g) == 8:
+                            [x1, y1, x2, y2, x3, y3, x4, y4] = g
+                            temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
+                            temp_list.sort()
+                            w = layersize[i] - 1
+                            if temp_list == [0, 0, 0, 0, w, w, w, w]:
+                                flag = 1
                     RoIs_padded.append(new_gt_boxes)
                     RoI = new_gt_boxes
                 else:
@@ -202,14 +199,15 @@ def RoI_for_layers(RoI):
                 if new_gt_boxes != None:
                     flag = 0
                     new_gt_boxes = padding_RoI(new_gt_boxes)
-                    g = new_gt_boxes[0]
-                    if len(g) == 8:
-                        [x1, y1, x2, y2, x3, y3, x4, y4] = g
-                        temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
-                        temp_list.sort()
-                        w = layersize[i] - 1
-                        if temp_list == [0, 0, 0, 0, w, w, w, w]:
-                            flag = 1
+                    if len(new_gt_boxes) == 1:
+                        g = new_gt_boxes[0]
+                        if len(g) == 8:
+                            [x1, y1, x2, y2, x3, y3, x4, y4] = g
+                            temp_list = [x1, y1, x2, y2, x3, y3, x4, y4]
+                            temp_list.sort()
+                            w = layersize[i] - 1
+                            if temp_list == [0, 0, 0, 0, w, w, w, w]:
+                                flag = 1
                     RoIs_padded.append(new_gt_boxes)
                     RoI = new_gt_boxes
                 else:
@@ -220,30 +218,52 @@ def RoI_for_layers(RoI):
                 RoIs_padded.append(None)
     return RoIs, RoIs_padded 
 
-def _store(Layers, RoI, id):
+
+
+def _draw_RoI_update(RoI, RoI2, id):
     RoIs, RoIs_padded = RoI_for_layers(RoI)
-    hisinfo_dicts = []
-    hisinfo_dict = {}
+    RoIs_2, RoIs_padded_2 = RL(RoI2)
     os.makedirs('frame{}'.format(id), exist_ok=True)
+    new_img = np.zeros([416, 416, 3], np.uint8)
+    for temp in RoI:
+        temp = np.asarray(temp).reshape(-1, 2)
+        cv2.polylines(new_img, np.int32([temp]), True, (80, 90, 100), 1)
+        idx = np.where(temp[:,0] == temp[:,0].min())
+        text = str(temp[idx][0][0]) + ',' + str(temp[idx][0][1])
+        cv2.putText(new_img, text, (temp[idx][0][0], temp[idx][0][1]), cv2.FONT_HERSHEY_SIMPLEX, 0.2, (255, 255, 255), 0)
+    im = Image.fromarray(new_img)
+    im.save("frame{}/initial_RoI.jpeg".format(id))
     for i in range(38):
         width = layersize[i]
         height = layersize[i]
         RoI = RoIs[i]
         RoI_padded = RoIs_padded[i]
-        temp_list = []
+        RoI_2 = RoIs_2[i]
+        RoI_padded_2 = RoIs_padded_2[i]
         idx = []
         new_img = np.zeros([width, height, 3], np.uint8)
         if RoI_padded is not None:
             for temp in RoI_padded:
                 temp = np.asarray(temp).reshape(-1, 2)
                 _b = sg.Polygon(temp).bounds
-                cv2.polylines(new_img, np.int32([temp]), True, (0, 255, 0), 3)
-                cv2.rectangle(new_img, (int(_b[0]), int(_b[1])), (int(_b[2]), int(_b[3])), (0, 0, 255), 3) 
+                cv2.polylines(new_img, np.int32([temp]), True, (0, 255, 0), 1)
+                idx = np.where(temp[:,0] == temp[:,0].min())
+                text = str(int(temp[idx][0][0])) + ',' + str(int(temp[idx][0][1]))
+                cv2.putText(new_img, text, (int(temp[idx][0][0]), int(temp[idx][0][1])), cv2.FONT_HERSHEY_SIMPLEX, 0.2, (255, 255, 255), 0)
+                #cv2.rectangle(new_img, (int(_b[0]), int(_b[1])), (int(_b[2]), int(_b[3])), (0, 0, 255), 1) 
 
         if RoI is not None:
             for temp in RoI:
                 temp = np.asarray(temp).reshape(-1, 2)
-                cv2.polylines(new_img, np.int32([temp]), True, (255, 0, 0), 3)
+                cv2.polylines(new_img, np.int32([temp]), True, (255, 0, 0), 1)
+        
+        if RoI_padded_2 is not None:
+            for temp in RoI_padded_2:
+                cv2.rectangle(new_img, (int(temp[0]), int(temp[1])), (int(temp[2]), int(temp[3])), (255, 255, 255), 1)
+        if RoI_2 is not None:
+            for temp in RoI_2:
+                cv2.rectangle(new_img, (int(temp[0]), int(temp[1])), (int(temp[2]), int(temp[3])), (0, 255, 255), 1)
+        
         im = Image.fromarray(new_img)
         im.save("frame{}/layer{}.jpeg".format(id, i))
 
@@ -303,87 +323,61 @@ def compare_with_edge(roi):
 
 def get_RoI(prev_boxes, frame_id):
     mvs = np.loadtxt('/i3c/hpcl/zjy5087/YOLO/mb/mb_v3/mv{}.txt'.format(frame_id))
-    if len(mvs) == 0:
-        return 2, None
-    r = sg.box(0, 0, 0, 0)
     if len(prev_boxes) > 0:
-        for box in prev_boxes:
+        r = sg.box(prev_boxes[0][0], prev_boxes[0][1], prev_boxes[0][2], prev_boxes[0][3])
+        for box in prev_boxes[1:]:
             r1 = sg.box(box[0], box[1], box[2], box[3])
-            if r.area == 0:
-                r = r1 
-            else:
-                r = r.union(r1)
-    mv_roi = sg.box(0, 0, 0, 0)
-    mvs = np.asarray(mvs).reshape(-1, 4)
+            r = r.union(r1)
+    mvs = np.asarray(mvs).reshape(-1, 4).astype('int32')
     if len(mvs) > 0:
-        for mv in mvs:
-            xmin = int(mv[0])
-            ymin = int(mv[1])
-            xmax = int(mv[2])
-            ymax = int(mv[3])
-            if mv_roi.area == 0:
-                mv_roi = sg.box(xmin, ymin, xmax, ymax)
-            else:
-                mv_roi = mv_roi.union(sg.box(xmin, ymin, xmax, ymax))
-    T1 = 0.4
-    T2 = 0.7
-    T3 = 0.8
-    flag = 0
-    if mv_roi.geom_type == 'MultiPolygon':
-        num = len(mv_roi.geoms)
-        for j in range(num):
-            roi = mv_roi.geoms[j]
-            if roi.area > 1000:
-                rate_1, rate_2 = method_1(roi, prev_boxes)
-                if(rate_1 < T1 and rate_1 > 0) or rate_2 > T3:
-                    return 2, None
-                    #r = r.union(roi)
-                    #flag = 2
-                elif rate_1 == 0:
-                    if compare_with_edge(roi):
-                        #r = r.union(roi)
+        mv_roi = sg.box(mvs[0][0], mvs[0][1], mvs[0][2], mvs[0][3])
+        for mv in mvs[1:]:
+            [xmin, ymin, xmax, ymax] = mv
+            mv_roi = mv_roi.union(sg.box(xmin, ymin, xmax, ymax))
+    
+        T1 = 0.4
+        T2 = 0.7
+        T3 = 0.8
+        flag = 0
+        if mv_roi.geom_type == 'MultiPolygon':
+            num = len(mv_roi.geoms)
+            for j in range(num):
+                roi = mv_roi.geoms[j]
+                if roi.area > 1000:
+                    rate_1, rate_2 = method_1(roi, prev_boxes)
+                    if rate_1 > 0 or rate_2 > T3:
+                        r = r.union(roi)
                         #flag = 2
-                        return 2, None
-                elif rate_1 > T1 and rate_1 < T2:
-                    r = r.union(roi)             # !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-                    flag = 1
-    elif mv_roi.area > 1000:
-        rate_1, rate_2 = method_1(mv_roi, prev_boxes)
-        if (rate_1 < T1 and rate_1 > 0) or (rate_2 > T3):
-            #r = r.union(mv_roi)
-            #flag = 2
-            return 2, None
-        elif rate_1 == 0:
-            if compare_with_edge(mv_roi):
-                #r = r.union(mv_roi) 
-                #flag = 2
-                return 2, None
-        elif rate_1 > T1 and rate_1 < T2:
-            r = r.union(mv_roi)
-            flag = 1
-    if flag != 0:
-        res = []
-        if r.geom_type == 'MultiPolygon':
-            polysize = len(r.geoms)
-            for i in range(polysize):
-                ploy = r.geoms[i]
-                x, y = ploy.exterior.coords.xy
-                _x = [int(x[i] * (416 / 1920)) for i in range(len(x))]
-                _y = [int(y[i] * (416 / 1920) + 91) for i in range(len(y))]
-                g = [item for sublist in zip(_x, _y) for item in sublist]
-                g = g[:len(g)-2]
-                res.append(g)
-        else:
-            if r.area != 0:
-                x, y = r.exterior.coords.xy
-                _x = [int(x[i] * (416 / 1920)) for i in range(len(x))]
-                _y = [int(y[i] * (416 / 1920) + 91) for i in range(len(y))]
-                g = [item for sublist in zip(_x, _y) for item in sublist]
-                g = g[:len(g)-2]
-                res.append(g)
-        return flag, res
+                    elif rate_1 == 0:
+                        if compare_with_edge(roi):
+                            r = r.union(roi)
+        elif mv_roi.area > 1000:
+            rate_1, rate_2 = method_1(mv_roi, prev_boxes)
+            if rate_1 > 0 or (rate_2 > T3):
+                r = r.union(mv_roi)
+            elif rate_1 == 0:
+                if compare_with_edge(mv_roi):
+                    r = r.union(mv_roi) 
+    res = []
+    if r.geom_type == 'MultiPolygon':
+        polysize = len(r.geoms)
+        for i in range(polysize):
+            ploy = r.geoms[i]
+            x, y = ploy.exterior.coords.xy
+            _x = [int(x[i] * (416 / 1920)) for i in range(len(x))]
+            _y = [int(y[i] * (416 / 1920) + 91) for i in range(len(y))]
+            g = [item for sublist in zip(_x, _y) for item in sublist]
+            g = g[:len(g)-2]
+            res.append(g)
     else:
-        return 0, None
+        if r.area != 0:
+            x, y = r.exterior.coords.xy
+            _x = [int(x[i] * (416 / 1920)) for i in range(len(x))]
+            _y = [int(y[i] * (416 / 1920) + 91) for i in range(len(y))]
+            g = [item for sublist in zip(_x, _y) for item in sublist]
+            g = g[:len(g)-2]
+            res.append(g)
+    return res
 
 def format_result(detections):
     dec = []
@@ -408,13 +402,21 @@ def get_image_id(path):
     image_name = image_name[5 : -5]
     return int(image_name)
 
+def RoI_box(Region_of_interests):
+    return_box = []
+    for RoI in Region_of_interests:
+        RoI = np.asarray(RoI).reshape(-1, 2)
+        _list = sg.Polygon(RoI).bounds
+        n_list = [int(x) for x in _list]
+        return_box.append(n_list)
+    return return_box
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--image_folder", type=str, default="data/samples_4", help="path to dataset")
-    parser.add_argument("--sample_index", type=int, default=4, help="the index of sample folder")
+    parser.add_argument("--image_folder", type=str, default="data/samples", help="path to dataset")
+    parser.add_argument("--sample_index", type=int, default=1, help="the index of sample folder")
     parser.add_argument("--extension", type=int, default=1, help="extension for RoIs")
     parser.add_argument("--model_def", type=str, default="config/yolov3.cfg", help="path to model definition file")
-    parser.add_argument("--model_2_def", type=str, default="config/yolov3_2.cfg", help="path to model_2 definition file")
     parser.add_argument("--weights_path", type=str, default="weights/yolov3.weights", help="path to weights file")
     parser.add_argument("--class_path", type=str, default="data/coco.names", help="path to class label file")
     parser.add_argument("--conf_thres", type=float, default=0.4, help="object confidence threshold")
@@ -423,19 +425,17 @@ if __name__ == "__main__":
     parser.add_argument("--n_cpu", type=int, default=0, help="number of cpu threads to use during batch generation")
     parser.add_argument("--img_size", type=int, default=416, help="size of each image dimension")
     parser.add_argument("--checkpoint_model", type=str, help="path to checkpoint model")
-    #parser.add_argument("--reuse_d", type=int, default=2, help="reuse distance")
-    #parser.add_argument("--start_p", type=int, default=0, help="start point")
+    parser.add_argument("--reuse_d", type=int, default=2, help="reuse distance")
+    parser.add_argument("--start_p", type=int, default=0, help="start point")
     opt = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    torch.set_num_threads(1)
 
     # Set up model
     model = Darknet(opt.model_def, img_size=opt.img_size).to(device)
-    model_2 = Darknet_2(opt.model_2_def, img_size=opt.img_size).to(device)
     extend = opt.extension
     # 
-    idx_for_mv = 1
+    idx_for_mv = 4200
 
     if opt.weights_path.endswith(".weights"):
         # Load darknet weights
@@ -445,14 +445,7 @@ if __name__ == "__main__":
         model.load_state_dict(torch.load(opt.weights_path))
 
     model.eval()  # Set in evaluation mode
-    if opt.weights_path.endswith(".weights"):
-        # Load darknet weights
-        weights_dict_2, bias_dict_2 = model_2.load_darknet_weights(opt.weights_path)
-    else:
-        # Load checkpoint weights
-        model_2.load_state_dict(torch.load(opt.weights_path))
 
-    model_2.eval()  # Set in evaluation mode
 
     image_sets = ImageFolder(opt.image_folder, img_size=opt.img_size)
 
@@ -460,87 +453,39 @@ if __name__ == "__main__":
 
     Tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.FloatTensor
     
-    #distance = opt.reuse_d
-    #start_point = opt.start_p    #[0, distance - 1]
+    distance = opt.reuse_d
+    start_point = opt.start_p    #[0, distance - 1]
     idx_sam = opt.sample_index
     img_shape = (1080, 1920)
-    os.makedirs('dynres_for_s{}_e{}'.format(idx_sam, extend), exist_ok=True)
 
-    full_flag = True
     for batch_i in range(len(image_sets)):
         (img_paths, input_imgs) = image_sets[batch_i]
         input_imgs = input_imgs.unsqueeze(0)
         input_imgs = Variable(input_imgs.type(Tensor))
 
-        #if batch_i >= start_point:
+        if batch_i >= start_point:
         # s: idx for samples file, e: expension (1: no expension), dist, start_point 
-        if full_flag:
+            if (batch_i - start_point) % distance == 0:
             # perform full inference, get layers
-            Layers = []
-            total_dicts = []
-            total_RoIs = []
-            with torch.no_grad():
-                try:
+                with torch.no_grad():
                     prev_time = time.time()
                     detections, layers = model(input_imgs, weights_dict, bias_dict)
                     current_time = time.time()
                     detections = non_max_suppression(detections, opt.conf_thres, opt.nms_thres)
-                except:
-                    continue
-            inference_time = datetime.timedelta(seconds=current_time - prev_time)
-            print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
-            # process detection results:
-            bboxes = []
-            res = format_result(detections)
-            print('full inf, res:\n', res)
-            if len(res) > 0:
-                bboxes = np.zeros(4 * len(res)).reshape(-1, 4)
-                bboxes[:, :] = res[:, 2 : 6]
-            prev_time = time.time()
-            for i in range(len(layers_idx)):
-                idx = layers_idx[i]
-                Layers.append(layers[idx])
-            #for j in range(1, distance):
-            j = 0
-            while(True):
-                j += 1
-                try:
-                    flag, Region_of_interests = get_RoI(bboxes, batch_i + j + idx_for_mv)
-                except:
-                    continue
-                # if expand?
-                if flag == 1:    #partial
-                    if True:
-                        if extend != 1:
-                            Region_of_interests = RoI_extension(Region_of_interests, (1 - 1. / extend))
-                        _store(Layers, Region_of_interests, batch_i + 1)
-                        full_flag = False
-                    else:
-                        print('error!!')
-                        next_frames_cnt = j - 1
-                        break
-                elif flag == 0:
-                    # do nothing
-                    full_flag = False
-                else:
-                    # need full inf for this frame
-                    next_frames_cnt = j - 1
-                    break
 
-            idx_for_partial = 0
+                inference_time = datetime.timedelta(seconds=current_time - prev_time)
+                print("\t+ Batch %d, Inference Time: %s" % (batch_i, inference_time))
+                # process detection results:
+                bboxes = []
+                res = format_result(detections)
+                print('full inf, res:\n', res)
+                if len(res) > 0:
+                    bboxes = np.zeros(4 * len(res)).reshape(-1, 4)
+                    bboxes[:, :] = res[:, 2 : 6]
 
-        else:
-            # do inf for batch_i, hisinfo is in total_dicts[idx_for_partial]
-            if idx_for_partial < next_frames_cnt:
-                # idx_for_partial(and skips)
-
-                idx_for_partial += 1
-                if idx_for_partial == next_frames_cnt:
-                    full_flag = True
-
-
-
-
-
-
+            else:
+                # do inf for batch_i, hisinfo is in total_dicts[idx_for_partial]
+                Region_of_Interest = get_RoI(bboxes, batch_i + 1)
+                Region_of_Interest2 = RoI_box(Region_of_Interest)
+                _draw_RoI_update(Region_of_Interest, Region_of_Interest2, batch_i + 1 + idx_for_mv)
 

@@ -187,10 +187,10 @@ class PADLayer(nn.Module):
             for R, R_p, his in zip(Rs, R_ps, his_info):
                 [xmin, ymin, xmax, ymax] = R
                 [xmin_2, ymin_2, xmax_2, ymax_2] = R_p
-                input_x[0, :, ymin_2:ymin, xmin:xmax+1] = his[0]
-                input_x[0, :, ymax+1:ymax_2+1, xmin:xmax+1] = his[1]
-                input_x[ymin_2:ymax_2+1, xmin_2:xmin] = his[2]
-                input_x[ymin_2:ymax_2+1, xmax+1:xmax_2+1] = his[3]
+                input_x[0, :, ymin_2:ymin, xmin:xmax+1] = torch.tensor(his[0])
+                input_x[0, :, ymax+1:ymax_2+1, xmin:xmax+1] = torch.tensor(his[1])
+                input_x[ymin_2:ymax_2+1, xmin_2:xmin] = torch.tensor(his[2])
+                input_x[ymin_2:ymax_2+1, xmax+1:xmax_2+1] = torch.tensor(his[3])
         return input_x
 
 class YOLOLayer_2(nn.Module):
